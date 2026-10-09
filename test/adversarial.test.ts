@@ -85,7 +85,7 @@ const ALICE_PAGE = `https://gist.github.com/alice/${gid("alicebot")}`;
 let v1: Doc, steps: Record<string, number> = {};
 
 // ---------- Happy path ----------
-test("H0 package installs from git or npm (prepare script + bin)", { todo: true }, () => {
+test("H0 package installs from git or npm (prepare script + bin)", () => {
   const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
   assert.ok(pkg.scripts.prepare && pkg.bin.botproof && pkg.files.includes("dist/src"));
 });

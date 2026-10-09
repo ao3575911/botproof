@@ -28,6 +28,7 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - Canonical JSON follows RFC 8785 for strings and key order, and rejects non-integer or unsafe numbers.
 
 ### Fixed
+- Installing from git or a tarball builds the CLI (`prepare` script), so `botproof` exists after install (review H0). CI installs the packed tarball and runs `botproof --version`.
 - A bad JSON file in the registry is reported by path, and the check fails closed (A12b).
 - Evidence signed in the same second the code was issued is accepted.
 - `init --bot https://x.ai/bot/<id>` works without `--platform`, as the README shows.

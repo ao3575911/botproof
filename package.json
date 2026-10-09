@@ -1,25 +1,47 @@
 {
   "name": "botproof",
   "version": "0.2.0",
-  "description": "Signed, checkable identity for AI agents, anchored on the creator.",
+  "description": "Know who made the bot: signed, checkable creator identity for AI agents.",
   "type": "module",
   "bin": {
     "botproof": "dist/src/cli.js"
   },
   "files": [
-    "dist/src"
+    "dist/src",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "test": "tsc && node --test dist/test/*.test.js"
   },
   "engines": {
     "node": ">=22"
   },
   "license": "MIT",
-  "repository": "github:ao3575911/botproof",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ao3575911/botproof.git"
+  },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "ai-agents",
+    "agent-identity",
+    "provenance",
+    "reputation",
+    "ed25519",
+    "web-bot-auth",
+    "grok"
+  ],
+  "homepage": "https://github.com/ao3575911/botproof#readme",
+  "bugs": "https://github.com/ao3575911/botproof/issues",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
