@@ -4,7 +4,10 @@ export type Check = { ok: boolean; detail: string };
 type Fetch = typeof fetch;
 
 export const proofText = (kind: string, subject: string, key: string) => `botproof-proof:${kind}:${subject}:${key}`;
-export const challengeText = (nonce: string) => `botproof-challenge:${nonce}`;
+/** The code a creator shows on the bot's page. Bound to the bot and the creator's key, so it can't be reused. */
+export const challengeText = (platform: string, botId: string, key: string, nonce: string) => `botproof-challenge:${platform}/${botId}:${key}:${nonce}`;
+export const NONCE_RE = /^[0-9a-f]{18}$/;
+export const GIST_URL = /^https:\/\/gist\.github\.com\/([A-Za-z0-9-]+)\/([0-9a-f]+)\/?$/i;
 
 // Gists are fetched without a token: Actions tokens get 403 on the gists API.
 function ghHeaders(raw = false, auth = !!process.env.GITHUB_TOKEN): Record<string, string> {
@@ -48,25 +51,29 @@ export const GROK_SHARE = /^https:\/\/x\.ai\/bot\/([A-Za-z0-9_-]{6,64})\/?$/;
 const unescapeHtml = (s: string) => s.replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
   .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d)).replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
-/** Creator-editable text on a Grok Bot share page (x.ai/bot/<id>): name, description and visible text. */
+/** Creator-editable text on a Grok Bot share page (x.ai/bot/<id>): the title and description tags only. */
 export function grokPageText(html: string): string {
   const meta = [...html.matchAll(/<meta[^>]+(?:name="description"|property="og:(?:title|description)")[^>]+content="([^"]*)"/g)].map((m) => m[1]);
   const title = html.match(/<title>([^<]*)<\/title>/)?.[1] || "";
-  const visible = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ");
-  return unescapeHtml([title, ...meta, visible].join("\n"));
+  return unescapeHtml([title, ...meta].join("\n"));
 }
 
-/** Bot challenge: the bot's public page shows the one-time code. */
-export async function checkChallenge(url: string, nonce: string, f: Fetch = fetch): Promise<Check> {
+/** Bot challenge: the bot's public page shows the bound code. A gist must belong to `gistOwner`. */
+export async function checkChallenge(url: string, text: string, f: Fetch = fetch, gistOwner?: string): Promise<Check> {
   try {
-    const gist = url.match(/^https:\/\/gist\.github\.com\/(?:[\w-]+\/)?([0-9a-f]+)\/?$/i);
+    const gist = url.match(GIST_URL);
     const grok = GROK_SHARE.test(url);
-    const target = gist ? `https://api.github.com/gists/${gist[1]}` : url;
+    const target = gist ? `https://api.github.com/gists/${gist[2]}` : url;
     const r = await f(target, { headers: gist ? ghHeaders(false, false) : { "user-agent": "botproof" } });
     if (!r.ok) return { ok: false, detail: `fetch ${r.status}` };
     let body = (await r.text()).slice(0, 2_000_000);
+    if (gist) {
+      const g = JSON.parse(body) as { owner?: { login?: string }; files?: Record<string, { content?: string }> };
+      if (!gistOwner || g.owner?.login?.toLowerCase() !== gistOwner.toLowerCase()) return { ok: false, detail: "gist not owned by the creator" };
+      body = Object.values(g.files || {}).map((x) => x.content || "").join("\n");
+    }
     if (grok) body = grokPageText(body);
-    return body.includes(challengeText(nonce))
+    return body.includes(text)
       ? { ok: true, detail: grok ? "code found on Grok share page" : "challenge code found" }
       : { ok: false, detail: "challenge code not found" };
   } catch (e) { return { ok: false, detail: String(e) }; }

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { Doc, ID_RE, docHash, slug, verifyDoc } from "./core.js";
-import { GROK_SHARE, checkChallenge, checkX, checkDns, checkGithub } from "./proofs.js";
+import { GIST_URL, GROK_SHARE, NONCE_RE, challengeText, checkChallenge, checkX, checkDns, checkGithub } from "./proofs.js";
 import { checkPlatformEvidence } from "./platform.js";
 
 type Fetch = typeof fetch;
@@ -36,6 +36,22 @@ export async function creatorTrust(c: Doc | undefined, f: Fetch = fetch) {
   return { trust: clamp(trust, 0, 100), links };
 }
 
+const githubUser = (h: unknown) => String(h).match(/^github:([A-Za-z0-9-]+)$/)?.[1];
+
+/** Where a bot's challenge may live: grok → its own share page; web → the creator's gist or a DNS-proven domain. */
+export function challengeUrlError(m: Doc, url: string, links: { type: string; subject: string; status: string }[]): string | undefined {
+  if (m.platform === "grok") return url.match(GROK_SHARE)?.[1] === m.botId ? undefined : `grok challenge must be on https://x.ai/bot/${m.botId}`;
+  if (m.platform === "web") {
+    const g = url.match(GIST_URL);
+    if (g) return g[1].toLowerCase() === githubUser(m.creator)?.toLowerCase() ? undefined : "web challenge gist must belong to the creator";
+    let host = "";
+    try { const u = new URL(url); if (u.protocol === "https:") host = u.hostname.toLowerCase(); } catch { /* invalid */ }
+    const domains = links.filter((l) => l.type === "dns" && l.status === "verified").map((l) => l.subject);
+    return host && domains.some((d) => host === d || host.endsWith("." + d)) ? undefined : "web challenge must be on the creator's gist or a DNS-proven domain";
+  }
+  return `unsupported platform ${m.platform}`;
+}
+
 export async function evaluate(b: Bundle, f: Fetch = fetch) {
   const m = b.manifest, errors: string[] = [];
   if (!verifyDoc(m)) errors.push("manifest signature invalid");
@@ -50,15 +66,15 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
   const ct = await creatorTrust(errors.length ? undefined : b.creator, f);
   let strength: Strength = "self-claimed", ownershipDetail = "no challenge";
   const ch = m.challenge as { nonce: string; url: string; issued?: string } | undefined;
-  const boundUrl = m.platform !== "grok" || (ch?.url.match(GROK_SHARE)?.[1] === m.botId);
+  const urlErr = ch ? challengeUrlError(m, ch.url, ct.links) : undefined;
   const pe = !errors.length && m.platformEvidence ? await checkPlatformEvidence(m.platformEvidence, ch?.nonce, ch?.issued, f) : undefined;
   if (errors.length) ownershipDetail = "invalid claim";
   else if (revoked.has(docHash(m))) { strength = "revoked"; ownershipDetail = "withdrawn by the creator"; }
   else if (pe?.ok) { strength = "platform-signed"; ownershipDetail = pe.detail; }
   else if (ch?.nonce && ch.url) {
-    if (!boundUrl) ownershipDetail = `grok challenge must be on https://x.ai/bot/${m.botId}`;
+    if (urlErr) ownershipDetail = urlErr;
     else {
-      const r = await checkChallenge(ch.url, ch.nonce, f);
+      const r = await checkChallenge(ch.url, challengeText(String(m.platform), String(m.botId), String(m.key), ch.nonce), f, githubUser(m.creator));
       ownershipDetail = r.detail;
       if (r.ok) strength = "challenge-passed";
     }
@@ -147,6 +163,15 @@ export async function check(dir: string, f: Fetch = fetch, _opts: CheckOpts = {}
       const who = creators[a.attester as string];
       if (!who || who.key !== a.key) errs.push(`${rel}: attester ${a.attester} not registered with this key`);
     }
+  }
+  const nonces = new Map<string, string>();
+  for (const d of hashes.values()) {
+    const ch = d.type === "bot" ? (d.challenge as { nonce?: string } | undefined) : undefined;
+    if (!ch) continue;
+    if (!NONCE_RE.test(String(ch.nonce))) { errs.push(`${d.platform}/${d.botId}: bad challenge nonce`); continue; }
+    const owner = `${d.platform}/${d.botId}:${d.key}`, prev = nonces.get(ch.nonce!);
+    if (prev && prev !== owner) errs.push(`${d.platform}/${d.botId}: challenge code reused from another bot or key`);
+    else nonces.set(ch.nonce!, owner);
   }
   for (const r of revocations) {
     const t = hashes.get(r.target as string);

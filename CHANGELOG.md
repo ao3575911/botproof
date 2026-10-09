@@ -8,6 +8,12 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - `test/adversarial.test.ts`: the review's 39-check attack simulation, with mocked network. Open attacks are `todo` until fixed.
 - `publish --to-dir <dir>` writes the signed files into a local registry copy instead of opening a PR.
 
+### Security
+- Challenge codes are bound to the bot and the creator's key: `botproof-challenge:<platform>/<botId>:<keyId>:<nonce>`. A copied code no longer passes for another bot or key (review A2, N2).
+- `web` challenges must be on the creator's own gist or a DNS-proven domain. Only `grok` and `web` platforms are accepted.
+- `registry check` rejects a challenge nonce used by another bot or key.
+- Grok share pages: only the title and description tags are read.
+
 ### Fixed
 - `init --bot https://x.ai/bot/<id>` works without `--platform`, as the README shows.
 
