@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { randomBytes } from "node:crypto";
 import { Doc, ID_RE, PLATFORMS, docHash, home, loadOrCreateKey, now, rotationDoc, sha256, signDoc, slug } from "./core.js";
-import { X_POST, challengeText, checkDns, checkGithub, checkX, proofText } from "./proofs.js";
+import { X_POST, safeGet, challengeText, checkDns, checkGithub, checkX, proofText } from "./proofs.js";
 import { Bundle, build, check, evaluate, load } from "./registry.js";
 import { checkPlatformEvidence } from "./platform.js";
 
@@ -70,7 +70,7 @@ async function fetchBundle(platform: string, botId: string, registry?: string): 
     const b = load(registry).bots.find((x) => x.bundle.manifest.platform === platform && x.bundle.manifest.botId === botId);
     return b ? b.bundle : die("not in registry");
   }
-  const r = await fetch(`${registry || API}/api/bots/${platform}/${botId}.json`);
+  const r = await safeGet(fetch, `${registry || API}/api/bots/${platform}/${botId}.json`);
   if (!r.ok) die(`not found in registry (${r.status})`);
   const docs = ((await r.json()) as { docs: Bundle }).docs;
   delete docs.platforms; // the allowlist is never taken from a mirror; use --registry <dir> for the registry's own list

@@ -200,7 +200,7 @@ test("A8 stolen key: manifests signed after key revocation are invalid", async (
   write(d, "bots/web/alice-bot/manifest.json", alice.craft({ ...v1, sig: undefined, key: undefined, version: "6.6.6", seq: 666, ts: new Date().toISOString() }));
   await blocked(d, "web/alice-bot", { author: "alice" });
 });
-test("A9 tampered creator file is rejected by CI and verify", { todo: true }, async () => {
+test("A9 tampered creator file is rejected by CI and verify", async () => {
   const d = adv(), p = join(d, "creators/github-alice.json"), c = JSON.parse(readFileSync(p, "utf8"));
   c.links.push({ type: "dns", domain: "alice.com" }); write(d, "creators/github-alice.json", c);
   const { errs, res } = await verdict(d, "web/alice-bot", { author: "alice" });
@@ -212,7 +212,7 @@ test("A10 impersonate a GitHub handle", async () => {
   assert.ok((await check(d, f)).length > 0);
   assert.equal(mallory.run("link", "github", "alice", "--proof", `https://gist.github.com/mallory/${gid("gmallory")}`).code, 1);
 });
-test("A10b verify rejects a handle that doesn't match its proven account", { todo: true }, async () => {
+test("A10b verify rejects a handle that doesn't match its proven account", async () => {
   const d = adv();
   write(d, "creators/github-torvalds.json", mallory.craft({ v: 1, type: "creator", handle: "github:torvalds", links: [{ type: "github", user: "mallory", proof: `https://gist.github.com/mallory/${gid("gmallory")}` }], ts: new Date().toISOString() }));
   write(d, "bots/web/linux-bot/manifest.json", mallory.craft({ v: 1, type: "bot", platform: "web", botId: "linux-bot", name: "Linus Bot", version: "1.0.0", seq: 1, creator: "github:torvalds", ts: new Date().toISOString() }));
@@ -229,12 +229,12 @@ test("A12 bad CLI input fails cleanly", () => {
   for (const a of [["init", "--platform", "web", "--bot", "../../etc/passwd"], ["init", "--platform", "<x>", "--bot", "b"], ["verify", "a/b/c"], ["verify", "../x"], ["revoke", "nothex"], ["attest", "web/alice-bot", "--tag", "great"], ["link", "github"], ["frobnicate"]])
     assert.equal(mallory.run(...a).code, 1, a.join(" "));
 });
-test("A12b invalid JSON fails closed and names the file", { todo: true }, async () => {
+test("A12b invalid JSON fails closed and names the file", async () => {
   const d = adv(); write(d, "creators/github-broken.json", "{not json");
   const errs = await check(d, f);
   assert.ok(errs.some((e) => e.includes("creators/github-broken.json")), errs.join("; "));
 });
-test("A12c HTML in a platform name is rejected and escaped", { todo: true }, async () => {
+test("A12c HTML in a platform name is rejected and escaped", async () => {
   const d = adv(), P = 'x" onmouseover="alert(1)';
   write(d, "creators/github-mallory.json", mc());
   write(d, `bots/${P}/b/manifest.json`, mallory.craft({ v: 1, type: "bot", platform: P, botId: "b", name: "n", version: "1", seq: 1, creator: "github:mallory", ts: new Date().toISOString() }));

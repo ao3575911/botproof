@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { Doc, ID_RE, docHash, slug, verifyDoc, verifyRotation } from "./core.js";
+import { Doc, ID_RE, PLATFORMS, docHash, slug, verifyDoc, verifyRotation } from "./core.js";
 import { GIST_URL, GROK_SHARE, NONCE_RE, challengeText, checkChallenge, checkX, checkDns, checkGithub } from "./proofs.js";
 import { Platform, checkPlatformEvidence } from "./platform.js";
+import { creatorErrors, docErrors } from "./rules.js";
 
 type Fetch = typeof fetch;
 export type Strength = "self-claimed" | "challenge-passed" | "platform-signed" | "revoked";
@@ -64,16 +65,14 @@ export function challengeUrlError(m: Doc, url: string, links: { type: string; su
 }
 
 export async function evaluate(b: Bundle, f: Fetch = fetch) {
-  const m = b.manifest, errors: string[] = [];
-  if (!verifyDoc(m)) errors.push("manifest signature invalid");
-  if (!b.creator) errors.push("creator not found");
-  else if (b.creator.handle !== m.creator || b.creator.key !== m.key) errors.push("manifest not signed by creator's key");
+  const m = b.manifest, errors: string[] = [...docErrors(m).map((e) => `manifest: ${e}`), ...creatorErrors(b.creator)];
+  if (m.type !== "bot") errors.push("manifest: type must be bot");
+  if (b.creator && (b.creator.handle !== m.creator || b.creator.key !== m.key)) errors.push("manifest not signed by creator's key");
   const rk = revokedKeys(b.keyRevocations);
   if (rk.has(String(m.key))) errors.push("manifest signed by a revoked key");
   if (b.creator && rk.has(String(b.creator.key))) errors.push("creator profile signed by a revoked key");
   const newer = (b.versions || []).find((v) => verifyDoc(v) && v.creator === m.creator && v.platform === m.platform && v.botId === m.botId && Number(v.seq) > Number(m.seq));
   if (newer) errors.push(`rolled back: a newer signed version exists (seq ${newer.seq})`);
-  if (!Number.isSafeInteger(m.seq) || Number(m.seq) < 1) errors.push("manifest needs a positive integer seq");
   const docs = [m, ...b.attestations];
   const revoked = new Set<string>();
   for (const r of b.revocations) {
@@ -106,13 +105,15 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
   for (const a of b.attestations) {
     let status = "counted", weight = 0;
     const who = b.attesters[a.attester as string];
-    if (!verifyDoc(a)) status = "bad signature";
+    const whoBad = creatorErrors(who).length > 0;
+    if (docErrors(a).length || a.type !== "attestation") status = "invalid";
     else if (revoked.has(docHash(a))) status = "revoked";
     else if (revokedAt(rk, a)) status = "key revoked";
     else if (a.platform !== m.platform || a.botId !== m.botId) status = "wrong bot";
     else if (a.versionHash !== docHash(m)) status = "earlier version";
     else if (a.attester === m.creator || a.key === m.key) status = "self-review rejected";
     else if (!who || who.key !== a.key) status = "unknown attester";
+    else if (whoBad) status = "attester invalid";
     else {
       const t = (await creatorTrust(who, f)).trust;
       weight = Math.round((t / 100) * 10 * (a.tag === "flagged" ? -1 : 1));
@@ -129,7 +130,9 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
   };
 }
 
-const readJson = (p: string) => JSON.parse(readFileSync(p, "utf8")) as Doc;
+const readJson = (p: string) => {
+  try { return JSON.parse(readFileSync(p, "utf8")) as Doc; } catch { throw new Error(`${p}: invalid JSON`); }
+};
 const jsonFiles = (d: string): string[] => !existsSync(d) ? [] : readdirSync(d, { withFileTypes: true })
   .flatMap((e) => e.isDirectory() ? jsonFiles(join(d, e.name)) : e.name.endsWith(".json") ? [join(d, e.name)] : []);
 
@@ -210,16 +213,18 @@ function checkChange(dir: string, baseDir: string, author: string | undefined, e
 
 export async function check(dir: string, f: Fetch = fetch, opts: CheckOpts = {}): Promise<string[]> {
   const errs: string[] = [];
-  const all = [...jsonFiles(join(dir, "creators")), ...jsonFiles(join(dir, "bots")), ...jsonFiles(join(dir, "revocations"))];
+  const all = ["creators", "bots", "revocations", "keys"].flatMap((x) => jsonFiles(join(dir, x)));
   const hashes = new Map<string, Doc>();
   for (const p of all) {
     const rel = relative(dir, p);
     let d: Doc;
-    try { d = readJson(p); } catch { errs.push(`${rel}: invalid JSON`); continue; }
-    if (!verifyDoc(d)) errs.push(`${rel}: bad signature`);
+    try { d = JSON.parse(readFileSync(p, "utf8")) as Doc; } catch { errs.push(`${rel}: invalid JSON`); continue; }
+    for (const e of docErrors(d)) errs.push(`${rel}: ${e}`);
     hashes.set(docHash(d), d);
   }
+  if (errs.some((e) => e.endsWith("invalid JSON"))) return errs;
   const { creators, revocations, bots } = load(dir);
+  for (const c of Object.values(creators)) errs.push(...creatorErrors(c));
   for (const [h, c] of Object.entries(creators)) {
     const gh = h.match(/^github:([A-Za-z0-9-]+)$/);
     if (!gh) { errs.push(`creator ${h}: handle must be github:<user> in v0`); continue; }
@@ -263,7 +268,7 @@ export async function check(dir: string, f: Fetch = fetch, opts: CheckOpts = {})
 }
 
 const COLORS: Record<string, string> = { "challenge-passed": "#2ea44f", "platform-signed": "#0969da", "self-claimed": "#8b949e", revoked: "#cf222e" };
-const esc = (s: string) => s.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
+const esc = (s: string) => s.replace(/[<>&"'`]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function badge(strength: string, score: number): string {
   const l = "botproof", r = `${strength} · ${score}`;
@@ -280,6 +285,7 @@ export async function build(dir: string, out: string, f: Fetch = fetch) {
   const { creators, bots } = load(dir);
   const index = [];
   for (const { bundle } of bots) {
+    if (!PLATFORMS.includes(String(bundle.manifest.platform)) || !ID_RE.test(String(bundle.manifest.botId))) continue;
     const res = await evaluate(bundle, f);
     const key = `${res.platform}/${res.botId}`;
     const attesters = Object.fromEntries(bundle.attestations.map((a) => [a.attester, creators[a.attester as string]]).filter(([, c]) => c));
@@ -292,7 +298,7 @@ export async function build(dir: string, out: string, f: Fetch = fetch) {
     put(`api/creators/${slug(h)}.json`, JSON.stringify({ handle: h, key: c.key, ...t, doc: c }, null, 2));
   }
   put("api/index.json", JSON.stringify({ generatedAt: new Date().toISOString(), bots: index }, null, 2));
-  const rows = index.map((b) => `<tr><td>${esc(String(b.name || b.botId))}</td><td>${esc(String(b.creator))}</td><td><a href="${b.api}"><img src="${b.badge}" alt="${esc(b.strength)}"></a></td></tr>`).join("");
+  const rows = index.map((b) => `<tr><td>${esc(String(b.name || b.botId))}</td><td>${esc(String(b.creator))}</td><td><a href="${esc(b.api)}"><img src="${esc(b.badge)}" alt="${esc(b.strength)}"></a></td></tr>`).join("");
   put("index.html", `<!doctype html><meta charset="utf-8"><title>botproof registry</title><style>body{font:15px system-ui;max-width:720px;margin:40px auto;padding:0 16px}td{padding:6px 12px 6px 0}</style><h1>botproof registry</h1><p>Signed identity for AI agents. <a href="api/index.json">JSON API</a> · <a href="https://github.com/ao3575911/botproof">CLI</a></p><table><tr><th align=left>Bot</th><th align=left>Creator</th><th align=left>Proof</th></tr>${rows}</table>`);
   return index;
 }

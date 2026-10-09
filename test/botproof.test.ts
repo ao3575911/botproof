@@ -44,6 +44,18 @@ const base = { "creators/github-alice.json": creator(alice, "alice", "aaa"), "cr
 
 test("canonical JSON sorts keys", () => assert.equal(canonical({ b: 1, a: [true, "x"] }), '{"a":[true,"x"],"b":1}'));
 
+test("RFC 8785 vectors: UTF-16 key order and string escaping; non-integers rejected", () => {
+  // RFC 8785 §3.2.3 sorting example (keys in UTF-16 code-unit order)
+  const sorted = canonical({ "\u20ac": "Euro Sign", "\r": "Carriage Return", "\ufb33": "Hebrew Letter Dalet With Dagesh", "1": "One",
+    "\ud83d\ude00": "Emoji: Grinning Face", "\u0080": "Control", "\u00f6": "Latin Small Letter O With Diaeresis" });
+  assert.deepEqual([...sorted.matchAll(/"((?:[^"\\]|\\.)*)":"/g)].map((m) => JSON.parse(`"${m[1]}"`)), ["\r", "1", "\u0080", "\u00f6", "\u20ac", "\ud83d\ude00", "\ufb33"]);
+  // RFC 8785 §3.2.2.2 string serialisation
+  assert.equal(canonical({ string: "\u20ac$\u000F\u000aA'\u0042\u0022\u005c\\\"/" }), '{"string":"€$\\u000f\\nA\'B\\"\\\\\\\\\\"/"}');
+  assert.equal(canonical({ literals: [null, true, false], n: -42 }), '{"literals":[null,true,false],"n":-42}');
+  for (const bad of [1.5, 1e400, 2 ** 60]) assert.throws(() => canonical({ bad }));
+  assert.equal(verifyDoc({ ...manifest, seq: 1.5 }), false);
+});
+
 test("signatures verify and catch tampering", () => {
   assert.ok(verifyDoc(manifest));
   assert.equal(verifyDoc({ ...manifest, name: "Evil" }), false);
