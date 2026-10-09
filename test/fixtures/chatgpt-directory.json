@@ -1,0 +1,11 @@
+{
+ "source": "https://chatgpt.com/.well-known/http-message-signatures-directory",
+ "fetched": "2026-10-09",
+ "authority": "chatgpt.com",
+ "headers": {
+  "signature-input": "sig1=(\"@authority\";req \"content-digest\");created=1791560733;expires=1791647133;keyid=\"ArwjqcCqtA5oxEWkzXGC-To_0A9whHmajCHtfe8I9aY\";tag=\"http-message-signatures-directory\";alg=\"ed25519\"",
+  "signature": "sig1=:1msjneon6n0+i4/SkhboC0n9FHdT9EzV2of96oIrQ9O5xUpo2VO0xDG7Enp0QBbOMTXkQxQtskk+01CJ92QZAA==:",
+  "content-digest": "sha-256=:0xKN/v8x/0HdQ5hu9l41NlnTmYLVZkdcvWsmKikCPQ4=:"
+ },
+ "body": "{\"keys\":[{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"P_1c4SX6fCavDcq6FRegWcVvaOKsp_aXHPEN1FcKDIA\",\"kid\":\"ArwjqcCqtA5oxEWkzXGC-To_0A9whHmajCHtfe8I9aY\",\"use\":\"sig\",\"nbf\":1735689600,\"exp\":1792165533}],\"signature_agent\":\"https://chatgpt.com\",\"purpose\":\"ai\"}"
+}

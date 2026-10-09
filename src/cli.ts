@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { Doc, ID_RE, docHash, home, loadOrCreateKey, now, sha256, signDoc, slug } from "./core.js";
 import { X_POST, challengeText, checkDns, checkGithub, checkX, proofText } from "./proofs.js";
 import { build, check, evaluate } from "./registry.js";
+import { checkPlatformEvidence } from "./platform.js";
 
 const VERSION = "0.1.0";
 const REGISTRY = process.env.BOTPROOF_REGISTRY || "ao3575911/botproof-registry";
@@ -24,6 +25,7 @@ const HELP = `botproof ${VERSION}: signed identity for AI agents
   link dns <domain>           prove a domain with a TXT record
   challenge [--url <bot-page>] get a one-time code to show on the bot's public page
                               (grok: put it in the bot description and update the share template)
+  evidence <file.json>        attach a platform-signed request (Web Bot Auth)
   sign                        sign botproof.json with your key
   publish                     open a PR to the registry with your signed files
   verify <platform>/<botId>   check a bot: signatures, live proofs, score
@@ -116,6 +118,16 @@ async function main() {
       const nonce = randomBytes(9).toString("hex");
       wr(MANIFEST, { ...m, challenge: { nonce, url: o.url, issued: now() }, sig: undefined, key: undefined });
       console.log(`Show this on ${o.url} (bot description, bio or a reply), then run botproof sign:\n\n${challengeText(nonce)}`);
+      break;
+    }
+    case "evidence": {
+      if (!args[0]) die("usage: evidence <file.json> (a captured Web Bot Auth request, see README)");
+      const m = rd(MANIFEST), ev = rd(args[0]);
+      const ch = m.challenge as { nonce?: string; issued?: string } | undefined;
+      const r = await checkPlatformEvidence(ev, ch?.nonce, ch?.issued);
+      if (!r.ok) die(r.detail);
+      wr(MANIFEST, { ...m, platformEvidence: ev, sig: undefined, key: undefined });
+      console.log(`platform evidence ok: ${r.detail}; run botproof sign`);
       break;
     }
     case "sign": {

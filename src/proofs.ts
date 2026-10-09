@@ -92,8 +92,3 @@ export async function checkX(url: string, key: string, f: Fetch = fetch): Promis
       : { ok: false, reachable: true, detail: "proof text not in post" };
   } catch (e) { return { ok: false, reachable: false, detail: String(e) }; }
 }
-
-/** Platform signatures (Web Bot Auth, signed A2A cards). Stub in v0: see issue tracker. */
-export async function checkPlatformSignature(_evidence: unknown): Promise<Check> {
-  return { ok: false, detail: "platform signatures not supported in v0" };
-}
