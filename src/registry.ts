@@ -1,14 +1,14 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { Doc, ID_RE, docHash, slug, verifyDoc } from "./core.js";
-import { GROK_SHARE, checkChallenge, checkDns, checkGithub, checkPlatformSignature } from "./proofs.js";
+import { GROK_SHARE, checkChallenge, checkX, checkDns, checkGithub, checkPlatformSignature } from "./proofs.js";
 
 type Fetch = typeof fetch;
 export type Strength = "self-claimed" | "challenge-passed" | "platform-signed" | "revoked";
 export type Bundle = { manifest: Doc; creator?: Doc; attestations: Doc[]; attesters: Record<string, Doc>; revocations: Doc[] };
 type Link = { type: string; user?: string; proof?: string; url?: string; domain?: string };
 
-const W = { github: 50, dns: 35, x: 5 } as Record<string, number>;
+const W = { github: 50, dns: 35, x: 20, xClaimed: 5 } as Record<string, number>;
 const OWN = { "self-claimed": 0, "challenge-passed": 25, "platform-signed": 35, revoked: 0 } as Record<Strength, number>;
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
@@ -26,8 +26,10 @@ export async function creatorTrust(c: Doc | undefined, f: Fetch = fetch) {
       links.push({ type: "dns", subject: l.domain, status: r.ok ? "verified" : "failed", detail: r.detail });
       if (r.ok) trust += W.dns;
     } else if (l.type === "x" && l.url) {
-      links.push({ type: "x", subject: l.url, status: "self-claimed", detail: "X posts are not fetched in v0" });
-      trust += W.x;
+      const r = await checkX(l.url, c.key!, f);
+      const status = r.ok ? "verified" : r.reachable ? "failed" : "self-claimed";
+      links.push({ type: "x", subject: l.url, status, detail: r.detail });
+      trust += r.ok ? W.x : status === "self-claimed" ? W.xClaimed : 0;
     }
   }
   return { trust: clamp(trust, 0, 100), links };

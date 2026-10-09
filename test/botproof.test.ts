@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Doc, canonical, docHash, keyId, signDoc, verifyDoc } from "../src/core.js";
 import { readFileSync } from "node:fs";
-import { challengeText, checkChallenge, checkGithub, grokPageText, proofText } from "../src/proofs.js";
+import { challengeText, checkChallenge, checkGithub, checkX, grokPageText, proofText } from "../src/proofs.js";
 import { badge, build, check, evaluate, load } from "../src/registry.js";
 
 const kp = () => generateKeyPairSync("ed25519").privateKey;
@@ -96,4 +96,13 @@ test("grok claims only count a code on that bot's own share page", async () => {
   const b = (url: string) => ({ manifest: m(url), creator: base["creators/github-alice.json"], attestations: [], attesters: {}, revocations: [] });
   assert.equal((await evaluate(b("https://x.ai/bot/0fF7Cqp8LTzh9JGQ-je3M"), ok)).strength, "challenge-passed");
   assert.equal((await evaluate(b("https://bot.example/page"), ok)).strength, "self-claimed");
+});
+
+test("X post proof: verified, wrong author, unreachable", async () => {
+  const post = (user: string, text: string, status = 200) => (async () => new Response(JSON.stringify({ text, user: { screen_name: user } }), { status })) as unknown as typeof fetch;
+  const url = "https://x.com/Alice/status/123", txt = proofText("x", "alice", id(alice));
+  assert.ok((await checkX(url, id(alice), post("alice", "hi " + txt))).ok);
+  assert.equal((await checkX(url, id(alice), post("mallory", txt))).ok, false);
+  const down = await checkX(url, id(alice), post("alice", "", 503));
+  assert.equal(down.ok || down.reachable, false);
 });

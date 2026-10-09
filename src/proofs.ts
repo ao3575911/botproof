@@ -72,6 +72,27 @@ export async function checkChallenge(url: string, nonce: string, f: Fetch = fetc
   } catch (e) { return { ok: false, detail: String(e) }; }
 }
 
+export const X_POST = /^https:\/\/(?:x|twitter)\.com\/(\w{1,15})\/status\/(\d+)/;
+
+/**
+ * X link: the post contains the proof text and is by that handle. Uses the free embed
+ * (syndication) endpoint; if X can't be reached the link stays self-claimed.
+ */
+export async function checkX(url: string, key: string, f: Fetch = fetch): Promise<Check & { reachable: boolean }> {
+  const m = url.match(X_POST);
+  if (!m) return { ok: false, reachable: true, detail: "not an X post URL" };
+  try {
+    const r = await f(`https://cdn.syndication.twimg.com/tweet-result?id=${m[2]}&token=a`, { headers: { "user-agent": "botproof" } });
+    if (!r.ok) return { ok: false, reachable: false, detail: `X fetch ${r.status}` };
+    const t = (await r.json()) as { text?: string; user?: { screen_name?: string } };
+    const handle = t.user?.screen_name?.toLowerCase();
+    if (handle !== m[1].toLowerCase()) return { ok: false, reachable: true, detail: "post is not by @" + m[1] };
+    return (t.text || "").includes(proofText("x", handle, key))
+      ? { ok: true, reachable: true, detail: "X post proof found" }
+      : { ok: false, reachable: true, detail: "proof text not in post" };
+  } catch (e) { return { ok: false, reachable: false, detail: String(e) }; }
+}
+
 /** Platform signatures (Web Bot Auth, signed A2A cards). Stub in v0: see issue tracker. */
 export async function checkPlatformSignature(_evidence: unknown): Promise<Check> {
   return { ok: false, detail: "platform signatures not supported in v0" };
