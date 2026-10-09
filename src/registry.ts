@@ -189,7 +189,8 @@ function checkChange(dir: string, baseDir: string, author: string | undefined, e
   const hc = load(dir).creators, bc = load(baseDir).creators;
   const keyOwner = new Map<string, string>();
   for (const c of [...Object.values(bc), ...Object.values(hc)]) if (c.key) keyOwner.set(c.key, String(c.handle));
-  for (const [rel, d] of base) if (d && !head.has(rel)) errs.push(`${rel}: signed files can't be deleted`);
+  // Signed files are append-only. Only files that fail today's rules (e.g. pre-0.3 formats) may be removed.
+  for (const [rel, d] of base) if (d && !head.has(rel) && docErrors(d).length === 0) errs.push(`${rel}: signed files can't be deleted`);
   const touched = [...head].filter(([rel, d]) => !d || !base.get(rel) || docHash(d) !== docHash(base.get(rel)!));
   const rk = revokedKeys([...head.values()].filter((d): d is Doc => !!d));
   for (const [rel, d] of touched) {
@@ -199,7 +200,7 @@ function checkChange(dir: string, baseDir: string, author: string | undefined, e
     if (d.type === "key-rotation" && !verifyRotation(d)) errs.push(`${rel}: rotation needs signatures from both keys`);
     if (rel.endsWith("/manifest.json") && base.get(rel)) {
       const old = base.get(rel)!;
-      if (!(Number(d.seq) > Number(old.seq))) errs.push(`${rel}: seq must increase (was ${old.seq}, now ${d.seq}); rollback rejected`);
+      if (!(Number(d.seq) > (Number(old.seq) || 0))) errs.push(`${rel}: seq must increase (was ${old.seq}, now ${d.seq}); rollback rejected`);
       if (d.creator !== old.creator) {
         const tdir = join(dir, dirname(rel), "transfers");
         const ok = jsonFiles(tdir).map(readJson).some((t) => t.type === "transfer" && verifyDoc(t) && t.key === old.key &&
