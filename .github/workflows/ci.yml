@@ -12,3 +12,15 @@ jobs:
         with: { node-version: 22 }
       - run: npm ci
       - run: npm test
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - name: npm pack, install the tarball, run it
+        run: |
+          npm pack
+          npm install -g --prefix "$RUNNER_TEMP/g" ./botproof-*.tgz
+          "$RUNNER_TEMP/g/bin/botproof" --version
