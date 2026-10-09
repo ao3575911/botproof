@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { randomBytes } from "node:crypto";
 import { Doc, ID_RE, docHash, home, loadOrCreateKey, now, sha256, signDoc, slug } from "./core.js";
-import { challengeText, checkDns, checkGithub, proofText } from "./proofs.js";
+import { X_POST, challengeText, checkDns, checkGithub, checkX, proofText } from "./proofs.js";
 import { build, check, evaluate } from "./registry.js";
 
 const VERSION = "0.1.0";
@@ -20,7 +20,7 @@ const HELP = `botproof ${VERSION}: signed identity for AI agents
                               start a bot manifest (botproof.json) and your key
   link github <user> [--proof <gist-url>|readme]
                               prove your GitHub account (prints the proof text first)
-  link x <post-url>           record your X account (self-claimed in v0)
+  link x <post-url>           prove your X account with a post
   link dns <domain>           prove a domain with a TXT record
   challenge [--url <bot-page>] get a one-time code to show on the bot's public page
                               (grok: put it in the bot description and update the share template)
@@ -94,8 +94,14 @@ async function main() {
         if (!r.ok) { console.log(`Add a TXT record at _botproof.${domain}:\n\n${proofText("dns", domain, k.id)}`); die(r.detail); }
         links.push({ type, domain });
       } else if (type === "x") {
-        if (!/^https:\/\/(x|twitter)\.com\/\w+\/status\/\d+/.test(subject)) die("expected an X post URL");
-        console.log(`Recorded as self-claimed. Your post should contain:\n${proofText("x", "<your-handle>", k.id)}`);
+        const xm = subject.match(X_POST);
+        if (!xm) die("expected an X post URL, e.g. https://x.com/<you>/status/<id>");
+        const r = await checkX(subject, k.id);
+        if (!r.ok) {
+          console.log(`Your post must contain:\n${proofText("x", xm![1].toLowerCase(), k.id)}`);
+          if (r.reachable) die(r.detail);
+          console.log(`Could not reach X (${r.detail}); recorded as self-claimed.`);
+        }
         links.push({ type, url: subject });
       } else die("unknown link type " + type);
       if (!c.handle) die("link github first: GitHub is the creator handle in v0");
