@@ -140,3 +140,21 @@ test("web bot auth: signed request with the code makes a claim platform-signed",
   assert.equal(r.strength, "platform-signed");
   assert.equal(r.score, 20 + 35);
 });
+
+test("ownership: a legit update and a signed transfer pass; takeover and wrong author fail", async () => {
+  const baseDir = registry(base);
+  const upd = signDoc({ ...manifest, sig: undefined, key: undefined, version: "1.1.0" }, alice);
+  const d1 = registry({ ...base, "bots/web/demo/manifest.json": upd });
+  assert.deepEqual(await check(d1, fakeFetch, { baseDir, author: "alice" }), []);
+  assert.ok((await check(d1, fakeFetch, { baseDir, author: "bob" })).some((e) => e.includes("PR author")));
+  const take = signDoc({ ...manifest, sig: undefined, key: undefined, creator: "github:bob", challenge: undefined }, bob);
+  const d2 = registry({ ...base, "bots/web/demo/manifest.json": take });
+  assert.ok((await check(d2, fakeFetch, { baseDir, author: "bob" })).some((e) => e.includes("owned by github:alice")));
+  const t = signDoc({ v: 1, type: "transfer", platform: "web", botId: "demo", to: "github:bob", toKey: id(bob), ts: T }, alice);
+  const d3 = registry({ ...base, "bots/web/demo/transfers/t.json": t });
+  assert.deepEqual(await check(d3, fakeFetch, { baseDir, author: "alice" }), []);
+  const d4 = registry({ ...base, "bots/web/demo/transfers/t.json": t, "bots/web/demo/manifest.json": take });
+  assert.deepEqual(await check(d4, fakeFetch, { baseDir: d3, author: "bob" }), []);
+  const d5 = registry({ "creators/github-bob.json": base["creators/github-bob.json"] });
+  assert.ok((await check(d5, fakeFetch, { baseDir, author: "bob" })).some((e) => e.includes("can't be deleted")));
+});

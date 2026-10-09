@@ -131,7 +131,51 @@ export function load(dir: string) {
 
 /** Structural and live checks run on every registry PR. Returns a list of errors. */
 export type CheckOpts = { baseDir?: string; author?: string };
-export async function check(dir: string, f: Fetch = fetch, _opts: CheckOpts = {}): Promise<string[]> {
+
+/** Every signed file under the registry, by relative path. */
+function signedFiles(dir: string): Map<string, Doc | undefined> {
+  const out = new Map<string, Doc | undefined>();
+  for (const p of ["creators", "bots", "revocations", "keys"].flatMap((d) => jsonFiles(join(dir, d)))) {
+    let d: Doc | undefined;
+    try { d = readJson(p); } catch { d = undefined; }
+    out.set(relative(dir, p), d);
+  }
+  return out;
+}
+
+/**
+ * Pull-request rules, comparing the PR head with its base:
+ * signed files are append-only; a bot keeps its owner unless the owner signs a transfer;
+ * and the PR author must be the GitHub account behind every signature it adds or changes.
+ */
+function checkChange(dir: string, baseDir: string, author: string | undefined, errs: string[]) {
+  const head = signedFiles(dir), base = signedFiles(baseDir);
+  const hc = load(dir).creators, bc = load(baseDir).creators;
+  const keyOwner = new Map<string, string>();
+  for (const c of [...Object.values(bc), ...Object.values(hc)]) if (c.key) keyOwner.set(c.key, String(c.handle));
+  for (const [rel, d] of base) if (d && !head.has(rel)) errs.push(`${rel}: signed files can't be deleted`);
+  const touched = [...head].filter(([rel, d]) => !d || !base.get(rel) || docHash(d) !== docHash(base.get(rel)!));
+  for (const [rel, d] of touched) {
+    if (!d) continue;
+    if (rel.endsWith("/manifest.json") && base.get(rel)) {
+      const old = base.get(rel)!;
+      if (d.creator !== old.creator) {
+        const tdir = join(dir, dirname(rel), "transfers");
+        const ok = jsonFiles(tdir).map(readJson).some((t) => t.type === "transfer" && verifyDoc(t) && t.key === old.key &&
+          t.platform === d.platform && t.botId === d.botId && t.to === d.creator && t.toKey === d.key);
+        if (!ok) errs.push(`${rel}: owned by ${old.creator}; a new owner needs a transfer signed by their key`);
+      } else if (d.key !== old.key && !(hc[String(d.creator)]?.key === d.key && bc[String(old.creator)]?.key === old.key))
+        errs.push(`${rel}: owned by ${old.creator} with another key`);
+    }
+    if (author) {
+      const signer = d.type === "creator" ? String(d.handle) : keyOwner.get(String(d.key));
+      if (!signer) errs.push(`${rel}: signed by a key no registered creator holds`);
+      else if (signer.toLowerCase() !== `github:${author.toLowerCase()}`) errs.push(`${rel}: signed by ${signer}, but the PR author is @${author}`);
+    }
+  }
+}
+
+export async function check(dir: string, f: Fetch = fetch, opts: CheckOpts = {}): Promise<string[]> {
   const errs: string[] = [];
   const all = [...jsonFiles(join(dir, "creators")), ...jsonFiles(join(dir, "bots")), ...jsonFiles(join(dir, "revocations"))];
   const hashes = new Map<string, Doc>();
@@ -178,6 +222,7 @@ export async function check(dir: string, f: Fetch = fetch, _opts: CheckOpts = {}
     if (!t) errs.push(`revocation ${r.target}: target not found`);
     else if (t.key !== r.key) errs.push(`revocation ${r.target}: only the original signer can revoke`);
   }
+  if (opts.baseDir) checkChange(dir, opts.baseDir, opts.author, errs);
   return errs;
 }
 

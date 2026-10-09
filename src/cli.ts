@@ -32,6 +32,8 @@ const HELP = `botproof ${VERSION}: signed identity for AI agents
   verify <platform>/<botId>   check a bot: signatures, live proofs, score
   attest <platform>/<botId> --tag <reviewed|audited|used-ok|flagged> [--note t]
                               sign a review of someone else's bot
+  transfer <platform>/<botId> --to github:<user> --to-key <key>
+                              hand a bot to another creator
   revoke <hash> [--reason t]  withdraw something you signed
 
   Files: key and creator profile in ${home()}, manifest in ./${MANIFEST}`;
@@ -55,7 +57,7 @@ async function main() {
     platform: { type: "string" }, bot: { type: "string" }, name: { type: "string" }, model: { type: "string" },
     "bot-version": { type: "string" }, "prompt-file": { type: "string" }, proof: { type: "string" },
     url: { type: "string" }, tag: { type: "string" }, note: { type: "string" }, reason: { type: "string" },
-    registry: { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
+    registry: { type: "string" }, base: { type: "string" }, author: { type: "string" }, to: { type: "string" }, "to-key": { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
   } });
   if (o.version) return console.log(VERSION);
   if (!cmd || o.help) return console.log(HELP);
@@ -152,6 +154,14 @@ async function main() {
       console.log(`signed ${o.tag} for ${platform}/${botId}; run botproof publish`);
       break;
     }
+    case "transfer": {
+      const { platform, botId } = botRef(args[0]);
+      if (!o.to?.match(/^github:[A-Za-z0-9-]+$/) || !o["to-key"]?.startsWith("ed25519:")) die("usage: transfer <platform>/<botId> --to github:<user> --to-key <their key id>");
+      const t = signDoc({ v: 1, type: "transfer", platform, botId, to: o.to, toKey: o["to-key"], ts: now() }, key().priv);
+      wr(join(outbox(), "bots", platform, botId, "transfers", `${docHash(t)}.json`), t);
+      console.log(`transfer to ${o.to} signed; run botproof publish, then they publish their manifest`);
+      break;
+    }
     case "revoke": {
       const target = args[0];
       if (!/^[0-9a-f]{64}$/.test(target || "")) die("revoke needs the sha256 hash of the signed document (shown by verify)");
@@ -231,7 +241,14 @@ async function main() {
     case "registry": {
       const [sub, dir = ".", out = "_site"] = args;
       if (sub === "check") {
-        const errs = await check(dir);
+        let baseDir: string | undefined;
+        if (o.base) {
+          if (!/^[\w./-]{1,100}$/.test(o.base)) die("bad --base ref");
+          baseDir = mkdtempSync(join(tmpdir(), "botproof-base-"));
+          execFileSync("sh", ["-c", 'git -C "$0" archive "$1" | tar -x -C "$2"', dir, o.base, baseDir]);
+        }
+        if (o.author && !/^[A-Za-z0-9-]{1,39}$/.test(o.author)) die("bad --author");
+        const errs = await check(dir, fetch, { baseDir, author: o.author });
         errs.forEach((e) => console.error("✗ " + e));
         if (errs.length) process.exit(1);
         console.log("✓ registry valid");
