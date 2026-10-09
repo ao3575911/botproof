@@ -6,7 +6,7 @@ import { checkPlatformEvidence } from "./platform.js";
 
 type Fetch = typeof fetch;
 export type Strength = "self-claimed" | "challenge-passed" | "platform-signed" | "revoked";
-export type Bundle = { manifest: Doc; creator?: Doc; attestations: Doc[]; attesters: Record<string, Doc>; revocations: Doc[] };
+export type Bundle = { manifest: Doc; creator?: Doc; attestations: Doc[]; attesters: Record<string, Doc>; revocations: Doc[]; versions?: Doc[] };
 type Link = { type: string; user?: string; proof?: string; url?: string; domain?: string };
 
 const W = { github: 50, dns: 35, x: 20, xClaimed: 5 } as Record<string, number>;
@@ -57,6 +57,9 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
   if (!verifyDoc(m)) errors.push("manifest signature invalid");
   if (!b.creator) errors.push("creator not found");
   else if (b.creator.handle !== m.creator || b.creator.key !== m.key) errors.push("manifest not signed by creator's key");
+  const newer = (b.versions || []).find((v) => verifyDoc(v) && v.creator === m.creator && v.platform === m.platform && v.botId === m.botId && Number(v.seq) > Number(m.seq));
+  if (newer) errors.push(`rolled back: a newer signed version exists (seq ${newer.seq})`);
+  if (!Number.isSafeInteger(m.seq) || Number(m.seq) < 1) errors.push("manifest needs a positive integer seq");
   const docs = [m, ...b.attestations];
   const revoked = new Set<string>();
   for (const r of b.revocations) {
@@ -88,6 +91,7 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
     if (!verifyDoc(a)) status = "bad signature";
     else if (revoked.has(docHash(a))) status = "revoked";
     else if (a.platform !== m.platform || a.botId !== m.botId) status = "wrong bot";
+    else if (a.versionHash !== docHash(m)) status = "earlier version";
     else if (a.attester === m.creator || a.key === m.key) status = "self-review rejected";
     else if (!who || who.key !== a.key) status = "unknown attester";
     else {
@@ -124,6 +128,7 @@ export function load(dir: string) {
     bots.push({ path: base, bundle: {
       manifest, creator: creators[manifest.creator as string], revocations, attesters: creators,
       attestations: jsonFiles(join(base, "attestations")).map(readJson),
+      versions: jsonFiles(join(base, "versions")).map(readJson),
     } });
   }
   return { creators, revocations, bots };
@@ -159,6 +164,7 @@ function checkChange(dir: string, baseDir: string, author: string | undefined, e
     if (!d) continue;
     if (rel.endsWith("/manifest.json") && base.get(rel)) {
       const old = base.get(rel)!;
+      if (!(Number(d.seq) > Number(old.seq))) errs.push(`${rel}: seq must increase (was ${old.seq}, now ${d.seq}); rollback rejected`);
       if (d.creator !== old.creator) {
         const tdir = join(dir, dirname(rel), "transfers");
         const ok = jsonFiles(tdir).map(readJson).some((t) => t.type === "transfer" && verifyDoc(t) && t.key === old.key &&
@@ -199,6 +205,9 @@ export async function check(dir: string, f: Fetch = fetch, opts: CheckOpts = {})
   for (const { path, bundle } of bots) {
     const m = bundle.manifest, rel = relative(dir, path);
     if (!ID_RE.test(String(m.botId)) || rel !== join("bots", String(m.platform), String(m.botId))) errs.push(`${rel}: path must be bots/<platform>/<botId>`);
+    if (!Number.isSafeInteger(m.seq) || Number(m.seq) < 1) errs.push(`${rel}: manifest needs a positive integer seq`);
+    if (!existsSync(join(path, "versions", docHash(m) + ".json"))) errs.push(`${rel}: missing versions/${docHash(m)}.json`);
+    for (const v of bundle.versions || []) if (Number(v.seq) > Number(m.seq) && v.creator === m.creator) errs.push(`${rel}: rolled back below seq ${v.seq}`);
     if (!bundle.creator) errs.push(`${rel}: creator ${m.creator} not registered`);
     else if (bundle.creator.key !== m.key) errs.push(`${rel}: manifest not signed by creator's key`);
     for (const a of bundle.attestations) {

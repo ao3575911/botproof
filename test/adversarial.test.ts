@@ -149,7 +149,7 @@ test("A2 replayed challenge on another bot", async () => {
   write(d, "bots/web/mallory-bot/manifest.json", mallory.craft({ v: 1, type: "bot", platform: "web", botId: "mallory-bot", name: "Mallory Bot", version: "0.1.0", seq: 1, challenge: v1.challenge, creator: "github:mallory", ts: new Date().toISOString() }));
   await blocked(d, "web/mallory-bot", { author: "mallory" });
 });
-test("A3 takeover: overwrite another creator's bot", { todo: true }, async () => {
+test("A3 takeover: overwrite another creator's bot", async () => {
   const d = adv(); write(d, "creators/github-mallory.json", mc());
   write(d, "bots/web/alice-bot/manifest.json", mallory.craft({ v: 1, type: "bot", platform: "web", botId: "alice-bot", name: "Alice Bot", version: "9.9.9", seq: 99, challenge: v1.challenge, creator: "github:mallory", ts: new Date().toISOString() }));
   const { errs } = await blocked(d, "web/alice-bot", { author: "mallory" });
@@ -181,7 +181,7 @@ test("A6 sybil: fresh sock accounts' reviews count 0", { todo: true }, async () 
   const res = await evaluate(bundle(d, "web/mallory-bot"), f);
   assert.equal(res.breakdown.reviews, 0, JSON.stringify(res.attestations));
 });
-test("A7 rollback to an older signed version", { todo: true }, async () => {
+test("A7 rollback to an older signed version", async () => {
   const d = adv();
   const v = (version: string, seq: number) => alice.craft({ ...v1, sig: undefined, key: undefined, version, seq, ts: new Date().toISOString() });
   const v2 = v("2.0.0", 2), v3 = v("3.0.0", 3);

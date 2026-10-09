@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import { randomBytes } from "node:crypto";
 import { Doc, ID_RE, PLATFORMS, docHash, home, loadOrCreateKey, now, sha256, signDoc, slug } from "./core.js";
 import { X_POST, challengeText, checkDns, checkGithub, checkX, proofText } from "./proofs.js";
-import { build, check, evaluate } from "./registry.js";
+import { Bundle, build, check, evaluate, load } from "./registry.js";
 import { checkPlatformEvidence } from "./platform.js";
 
 const VERSION = "0.2.0";
@@ -52,12 +52,22 @@ function botRef(ref?: string) {
   return { platform, botId };
 }
 
+async function fetchBundle(platform: string, botId: string, registry?: string): Promise<Bundle> {
+  if (registry && existsSync(registry)) {
+    const b = load(registry).bots.find((x) => x.bundle.manifest.platform === platform && x.bundle.manifest.botId === botId);
+    return b ? b.bundle : die("not in registry");
+  }
+  const r = await fetch(`${registry || API}/api/bots/${platform}/${botId}.json`);
+  if (!r.ok) die(`not found in registry (${r.status})`);
+  return ((await r.json()) as { docs: Bundle }).docs;
+}
+
 async function main() {
   const { values: o, positionals: [cmd, ...args] } = parseArgs({ allowPositionals: true, options: {
     platform: { type: "string" }, bot: { type: "string" }, name: { type: "string" }, model: { type: "string" },
     "bot-version": { type: "string" }, "prompt-file": { type: "string" }, proof: { type: "string" },
     url: { type: "string" }, tag: { type: "string" }, note: { type: "string" }, reason: { type: "string" },
-    registry: { type: "string" }, base: { type: "string" }, author: { type: "string" }, to: { type: "string" }, "to-key": { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
+    registry: { type: "string" }, base: { type: "string" }, author: { type: "string" }, to: { type: "string" }, "to-key": { type: "string" }, "version-hash": { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
   } });
   if (o.version) return console.log(VERSION);
   if (!cmd || o.help) return console.log(HELP);
@@ -138,7 +148,8 @@ async function main() {
     case "sign": {
       const k = key(), c = creator();
       if (c.key !== k.id) die("creator profile was signed with another key; run link github again");
-      const m: Doc = signDoc({ ...rd(MANIFEST), creator: c.handle, ts: now() }, k.priv);
+      const prev = rd(MANIFEST);
+      const m: Doc = signDoc({ ...prev, seq: (Number(prev.seq) || 0) + 1, creator: c.handle, ts: now() }, k.priv);
       wr(MANIFEST, m);
       console.log(`signed ${m.platform}/${m.botId} version ${m.version}\nhash ${docHash(m)}`);
       break;
@@ -148,7 +159,13 @@ async function main() {
       const tags = ["reviewed", "audited", "used-ok", "flagged"];
       if (!o.tag || !tags.includes(o.tag)) die("--tag must be one of " + tags.join(", "));
       const k = key(), c = creator();
-      const a = signDoc({ v: 1, type: "attestation", platform, botId, attester: c.handle, tag: o.tag, note: o.note || "", ts: now() }, k.priv);
+      let versionHash = o["version-hash"];
+      if (!versionHash) {
+        const res = await fetchBundle(platform, botId, o.registry).then((b) => docHash(b.manifest));
+        versionHash = res;
+      }
+      if (!/^[0-9a-f]{64}$/.test(versionHash!)) die("bad --version-hash");
+      const a = signDoc({ v: 1, type: "attestation", platform, botId, versionHash, attester: c.handle, tag: o.tag, note: o.note || "", ts: now() }, k.priv);
       const p = join(outbox(), "bots", platform, botId, "attestations", `${slug(String(c.handle))}-${Date.now()}.json`);
       wr(p, a);
       console.log(`signed ${o.tag} for ${platform}/${botId}; run botproof publish`);
@@ -215,16 +232,7 @@ async function main() {
     }
     case "verify": {
       const { platform, botId } = botRef(args[0]);
-      let docs: { manifest: Doc; creator?: Doc; attestations: Doc[]; attesters: Record<string, Doc>; revocations: Doc[] };
-      if (o.registry && existsSync(o.registry)) {
-        const { load } = await import("./registry.js");
-        const b = load(o.registry).bots.find((x) => x.bundle.manifest.platform === platform && x.bundle.manifest.botId === botId);
-        docs = b ? b.bundle : die("not in registry");
-      } else {
-        const r = await fetch(`${o.registry || API}/api/bots/${platform}/${botId}.json`);
-        if (!r.ok) die(`not found in registry (${r.status})`);
-        docs = ((await r.json()) as { docs: typeof docs }).docs;
-      }
+      const docs = await fetchBundle(platform, botId, o.registry);
       const res = await evaluate(docs);
       if (o.json) return console.log(JSON.stringify(res, null, 2));
       const ok = (b: boolean) => (b ? "✓" : "✗");
@@ -232,7 +240,9 @@ async function main() {
       console.log(`${ok(!res.errors.length)} signatures${res.errors.length ? ": " + res.errors.join("; ") : ""}`);
       for (const l of res.links) console.log(`${ok(l.status === "verified")} ${l.type} ${l.subject}: ${l.status}`);
       console.log(`  ownership: ${res.strength} (${res.ownershipDetail})`);
-      for (const a of res.attestations) console.log(`  ${a.tag} by ${a.attester}: ${a.status}${a.weight ? ` (${a.weight > 0 ? "+" : ""}${a.weight})` : ""}`);
+      const earlier = res.attestations.filter((a) => a.status === "earlier version").length;
+      if (earlier) console.log(`  reviews of earlier versions: ${earlier} (not counted)`);
+      for (const a of res.attestations.filter((x) => x.status !== "earlier version")) console.log(`  ${a.tag} by ${a.attester}: ${a.status}${a.weight ? ` (${a.weight > 0 ? "+" : ""}${a.weight})` : ""}`);
       console.log(`score ${res.score} = identity ${res.breakdown.identity} + ownership ${res.breakdown.ownership} + reviews ${res.breakdown.reviews}`);
       console.log(`hash ${res.versionHash}`);
       if (res.errors.length || res.strength === "revoked") process.exit(2);
