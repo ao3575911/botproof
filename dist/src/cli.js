@@ -9,7 +9,7 @@ import { ID_RE, PLATFORMS, docHash, home, loadOrCreateKey, now, rotationDoc, sha
 import { X_POST, safeGet, challengeText, checkDns, checkGithub, checkX, proofText } from "./proofs.js";
 import { build, check, evaluate, load } from "./registry.js";
 import { checkPlatformEvidence } from "./platform.js";
-const VERSION = "0.3.1";
+const VERSION = "0.3.2";
 const REGISTRY = process.env.BOTPROOF_REGISTRY || "ao3575911/botproof-registry";
 const API = process.env.BOTPROOF_API || "https://ao3575911.github.io/botproof-registry";
 const MANIFEST = "botproof.json";

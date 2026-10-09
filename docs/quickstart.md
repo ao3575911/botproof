@@ -3,7 +3,7 @@
 Needs Node 22+ and the GitHub CLI (`gh`), signed in.
 
 ```bash
-npm i -g https://github.com/ao3575911/botproof/releases/download/v0.3.1/botproof-0.3.1.tgz
+npm i -g https://github.com/ao3575911/botproof/releases/download/v0.3.2/botproof-0.3.2.tgz
 # or straight from GitHub: npm i -g github:ao3575911/botproof
 # (npx botproof once it's on npm)
 botproof init --bot https://x.ai/bot/<id> --name "My Bot"   # asks for a key passphrase

@@ -20,7 +20,7 @@ flowchart LR
 Needs Node 22+ and the GitHub CLI.
 
 ```bash
-npm i -g https://github.com/ao3575911/botproof/releases/download/v0.3.1/botproof-0.3.1.tgz
+npm i -g https://github.com/ao3575911/botproof/releases/download/v0.3.2/botproof-0.3.2.tgz
 # or straight from GitHub: npm i -g github:ao3575911/botproof
 # (npx botproof once it's on npm)
 botproof init --bot https://x.ai/bot/<id> --name "My Bot"
@@ -37,7 +37,7 @@ botproof verify grok/<id> --min-strength challenge-passed
 ```
 
 ```yaml
-- uses: ao3575911/botproof@v0.3.1
+- uses: ao3575911/botproof@v0.3.2
   with: { bot: grok/<id>, min-strength: challenge-passed }
 ```
 

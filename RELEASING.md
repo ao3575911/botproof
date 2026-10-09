@@ -9,7 +9,8 @@ Don't tag by hand. Nobody holds the signing key locally.
 ## Signing key
 
 - The private key exists only in the Actions secret `RELEASE_GPG_KEY`.
-- The public key is `.github/release-signing-key.asc`: ed25519, fingerprint `D2CA93B51F4FD9064B079045DB1E33968875325D`, uid `<280728713+ao3575911@users.noreply.github.com>`.
+- The public key is `.github/release-signing-key.asc`: ed25519, fingerprint `C35E1B1094F0EE4199EE4E2F7F5B79FA1BCBA754`, uid `<280728713+ao3575911@users.noreply.github.com>`.
+- The same key signs registry tags (`tag` workflow in ao3575911/botproof-registry).
 - For GitHub to show **Verified** on tags, an owner of the ao3575911 account adds this public key under *Settings → SSH and GPG keys → New GPG key*. Or from a shell: `gh auth refresh -s admin:gpg_key && gh gpg-key add .github/release-signing-key.asc`.
 - v0.3.0 and v0.3.1 were signed with the retired key `E419E09237F7817B2116DDC4FE8705F155BFBE8C` (`.github/release-signing-key-v0.3.0-v0.3.1.asc`).
 - Rotating the key means generating a new key, replacing the secret and this public key file, and adding it on GitHub.
