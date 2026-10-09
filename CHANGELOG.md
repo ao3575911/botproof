@@ -4,6 +4,9 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Security
+- Release tags are now created and GPG-signed in CI (`release` workflow, run by hand on `main`). The private key exists only in the `RELEASE_GPG_KEY` Actions secret. The new key is D2CA93B5…8875325D, published in `.github/release-signing-key.asc`. The old key (E419E092…55BFBE8C), which signed v0.3.0 and v0.3.1, is retired; its public key stays in `.github/release-signing-key-v0.3.0-v0.3.1.asc`.
+
 ### Fixed
 - `npm i -g github:ao3575911/botproof` failed with `tsc: not found`, because npm does not install devDependencies when it prepares a git dependency for a global install. Built `dist/src` is now committed. The `prepare` script is gone and `build` is renamed `compile` (npm runs a git dependency's install step whenever either one exists), and CI fails if `dist/src` is stale. The README installs the release tarball first, with the GitHub install as the fallback.
 - New CI job `github-install` runs that exact command, then `botproof --version`.
