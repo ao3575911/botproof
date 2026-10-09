@@ -32,6 +32,7 @@ const HELP = `botproof ${VERSION}: signed identity for AI agents
   verify <platform>/<botId> [--git | --registry dir]
                               check a bot: signatures, live proofs, score
                               (--git: from a fresh clone of the registry, not the API)
+                              (--trust a,b | file: only count reviews from these handles)
   attest <platform>/<botId> --tag <reviewed|audited|used-ok|flagged> [--note t]
                               sign a review of someone else's bot
   transfer <platform>/<botId> --to github:<user> --to-key <key>
@@ -100,7 +101,7 @@ async function main() {
     platform: { type: "string" }, bot: { type: "string" }, name: { type: "string" }, model: { type: "string" },
     "bot-version": { type: "string" }, "prompt-file": { type: "string" }, proof: { type: "string" },
     url: { type: "string" }, tag: { type: "string" }, note: { type: "string" }, reason: { type: "string" },
-    registry: { type: "string" }, base: { type: "string" }, author: { type: "string" }, to: { type: "string" }, "to-key": { type: "string" }, "version-hash": { type: "string" }, key: { type: "boolean" }, git: { type: "boolean" }, since: { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
+    registry: { type: "string" }, base: { type: "string" }, author: { type: "string" }, to: { type: "string" }, "to-key": { type: "string" }, "version-hash": { type: "string" }, key: { type: "boolean" }, git: { type: "boolean" }, trust: { type: "string" }, since: { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
   } });
   if (o.version) return console.log(VERSION);
   if (!cmd || o.help) return console.log(HELP);
@@ -299,7 +300,9 @@ async function main() {
     case "verify": {
       const { platform, botId } = botRef(args[0]);
       const docs = await fetchBundle(platform, botId, o.registry, o.git);
-      const res = await evaluate(docs);
+      let trust: string[] | undefined;
+      if (o.trust) trust = (existsSync(o.trust) ? readFileSync(o.trust, "utf8") : o.trust).split(/[\s,]+/).filter(Boolean).map((h) => (h.includes(":") ? h : `github:${h}`));
+      const res = await evaluate(docs, fetch, { trust });
       if (o.json) return console.log(JSON.stringify(res, null, 2));
       const ok = (b: boolean) => (b ? "✓" : "✗");
       console.log(`${res.name} (${platform}/${botId}) v${res.version}`);

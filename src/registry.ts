@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { Doc, ID_RE, PLATFORMS, docHash, slug, verifyDoc, verifyRotation } from "./core.js";
-import { GIST_URL, GROK_SHARE, NONCE_RE, challengeText, checkChallenge, checkX, checkDns, checkGithub } from "./proofs.js";
+import { githubStanding, GIST_URL, GROK_SHARE, NONCE_RE, challengeText, checkChallenge, checkX, checkDns, checkGithub } from "./proofs.js";
 import { Platform, checkPlatformEvidence } from "./platform.js";
 import { creatorErrors, docErrors } from "./rules.js";
 
@@ -32,8 +32,10 @@ export async function creatorTrust(c: Doc | undefined, f: Fetch = fetch) {
   for (const l of (c.links as Link[]) || []) {
     if (l.type === "github" && l.user && l.proof) {
       const r = await checkGithub(l.user, l.proof, c.key!, f);
-      links.push({ type: "github", subject: l.user, status: r.ok ? "verified" : "failed", detail: r.detail });
-      if (r.ok) trust += W.github;
+      const st = r.ok ? await githubStanding(l.user, f) : undefined;
+      links.push({ type: "github", subject: l.user, status: r.ok ? "verified" : "failed", detail: st ? `${r.detail}; ${st.detail}` : r.detail });
+      // New accounts are capped: established 50, under a year 35, new or unknown 15.
+      if (st) trust += st.level === "established" ? W.github : st.level === "young" ? 35 : 15;
     } else if (l.type === "dns" && l.domain) {
       const r = await checkDns(l.domain, c.key!);
       links.push({ type: "dns", subject: l.domain, status: r.ok ? "verified" : "failed", detail: r.detail });
@@ -64,7 +66,8 @@ export function challengeUrlError(m: Doc, url: string, links: { type: string; su
   return `unsupported platform ${m.platform}`;
 }
 
-export async function evaluate(b: Bundle, f: Fetch = fetch) {
+export type EvalOpts = { trust?: string[] };
+export async function evaluate(b: Bundle, f: Fetch = fetch, opts: EvalOpts = {}) {
   const m = b.manifest, errors: string[] = [...docErrors(m).map((e) => `manifest: ${e}`), ...creatorErrors(b.creator)];
   if (m.type !== "bot") errors.push("manifest: type must be bot");
   if (b.creator && (b.creator.handle !== m.creator || b.creator.key !== m.key)) errors.push("manifest not signed by creator's key");
@@ -114,6 +117,8 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
     else if (a.attester === m.creator || a.key === m.key) status = "self-review rejected";
     else if (!who || who.key !== a.key) status = "unknown attester";
     else if (whoBad) status = "attester invalid";
+    else if (opts.trust && !opts.trust.map((x) => x.toLowerCase()).includes(String(a.attester).toLowerCase())) status = "not in your trust list";
+    else if (!["established", "young"].includes((await githubStanding(String(a.attester).replace(/^github:/, ""), f)).level)) status = "new account (under 90 days), not counted";
     else {
       const t = (await creatorTrust(who, f)).trust;
       weight = Math.round((t / 100) * 10 * (a.tag === "flagged" ? -1 : 1));
