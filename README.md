@@ -20,7 +20,9 @@ flowchart LR
 Needs Node 22+ and the GitHub CLI.
 
 ```bash
-npm i -g github:ao3575911/botproof          # npx botproof once it's on npm
+npm i -g https://github.com/ao3575911/botproof/releases/download/v0.3.1/botproof-0.3.1.tgz
+# or straight from GitHub: npm i -g github:ao3575911/botproof
+# (npx botproof once it's on npm)
 botproof init --bot https://x.ai/bot/<id> --name "My Bot"
 botproof link github <you>                   # put the printed line in a public gist
 botproof link github <you> --proof <gist-url>

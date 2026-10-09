@@ -12,6 +12,8 @@ jobs:
         with: { node-version: 22 }
       - run: npm ci
       - run: npm test
+      - name: committed dist/src matches src
+        run: git diff --exit-code -- dist/src || { echo "::error::dist/src is stale; run npm run compile and commit it"; exit 1; }
   smoke:
     runs-on: ubuntu-latest
     steps:
@@ -24,3 +26,14 @@ jobs:
           npm pack
           npm install -g --prefix "$RUNNER_TEMP/g" ./botproof-*.tgz
           "$RUNNER_TEMP/g/bin/botproof" --version
+  github-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22 }
+      - name: npm i -g github:ao3575911/botproof (this PR's commit on PRs), then run it
+        run: |
+          ref=""; [ -n "$HEAD_SHA" ] && ref="#$HEAD_SHA"
+          npm i -g "github:ao3575911/botproof$ref"
+          botproof --version
+        env: { HEAD_SHA: "${{ github.event.pull_request.head.sha }}" }

@@ -13,8 +13,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc",
-    "prepare": "tsc",
+    "compile": "tsc",
     "test": "tsc && node --test dist/test/*.test.js"
   },
   "engines": {
