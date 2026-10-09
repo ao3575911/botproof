@@ -328,4 +328,22 @@ test("K1 a rotated key keeps the bot", async () => {
   assert.ok(readFileSync(join(a.home, "key.pem"), "utf8").includes("ENCRYPTED PRIVATE KEY"));
 });
 
+test("R1 verify flags an API document that doesn't match the index hash", async () => {
+  const site = mkdtempSync(join(ROOT, "site-"));
+  await build(REG, site, f, "abc123");
+  const api = "https://api.test", get = (p: string) => readFileSync(join(site, p), "utf8");
+  web.pages[`${api}/api/index.json`] = get("api/index.json");
+  web.pages[`${api}/api/bots/web/alice-bot.json`] = get("api/bots/web/alice-bot.json"); save();
+  const ok = alice.run("verify", "web/alice-bot", "--registry", api);
+  assert.equal(ok.code, 0, ok.out); assert.match(ok.out, /registry commit abc123 \(index hashes match\)/);
+  const j = JSON.parse(get("api/bots/web/alice-bot.json")); j.docs.attestations = [];
+  web.pages[`${api}/api/bots/web/alice-bot.json`] = JSON.stringify(j); save();
+  const stripped = alice.run("verify", "web/alice-bot", "--registry", api);
+  assert.equal(stripped.code, 1); assert.match(stripped.out, /lists 1 review/);
+  j.docs.attestations = JSON.parse(get("api/bots/web/alice-bot.json")).docs.attestations; j.docs.manifest.name = "Evil";
+  web.pages[`${api}/api/bots/web/alice-bot.json`] = JSON.stringify(j); save();
+  const bad = alice.run("verify", "web/alice-bot", "--registry", api);
+  assert.equal(bad.code, 1); assert.match(bad.out, /don't match the registry index/);
+});
+
 test("cleanup", () => rmSync(ROOT, { recursive: true, force: true }));

@@ -29,7 +29,9 @@ const HELP = `botproof ${VERSION}: signed identity for AI agents
   sign                        sign botproof.json with your key
   publish [--to-dir d]        open a PR to the registry with your signed files
                               (--to-dir: write them into a local registry copy instead)
-  verify <platform>/<botId>   check a bot: signatures, live proofs, score
+  verify <platform>/<botId> [--git | --registry dir]
+                              check a bot: signatures, live proofs, score
+                              (--git: from a fresh clone of the registry, not the API)
   attest <platform>/<botId> --tag <reviewed|audited|used-ok|flagged> [--note t]
                               sign a review of someone else's bot
   transfer <platform>/<botId> --to github:<user> --to-key <key>
@@ -65,16 +67,32 @@ async function askHidden(prompt: string): Promise<string> {
   return answer;
 }
 
-async function fetchBundle(platform: string, botId: string, registry?: string): Promise<Bundle> {
+async function fetchBundle(platform: string, botId: string, registry?: string, viaGit = false): Promise<Bundle & { note?: string }> {
+  if (viaGit) {
+    const dir = mkdtempSync(join(tmpdir(), "botproof-git-"));
+    execFileSync("git", ["clone", "-q", "--depth", "1", `https://github.com/${REGISTRY}.git`, dir]);
+    registry = dir;
+  }
   if (registry && existsSync(registry)) {
     const b = load(registry).bots.find((x) => x.bundle.manifest.platform === platform && x.bundle.manifest.botId === botId);
-    return b ? b.bundle : die("not in registry");
+    if (!b) return die("not in registry");
+    let commit = "";
+    try { commit = execFileSync("git", ["-C", registry, "rev-parse", "HEAD"], { encoding: "utf8", stdio: "pipe" }).trim(); } catch { /* not a git dir */ }
+    return { ...b.bundle, note: commit ? `registry commit ${commit}` : `registry dir ${registry}` };
   }
-  const r = await safeGet(fetch, `${registry || API}/api/bots/${platform}/${botId}.json`);
+  const base = registry || API;
+  const r = await safeGet(fetch, `${base}/api/bots/${platform}/${botId}.json`);
   if (!r.ok) die(`not found in registry (${r.status})`);
   const docs = ((await r.json()) as { docs: Bundle }).docs;
   delete docs.platforms; // the allowlist is never taken from a mirror; use --registry <dir> for the registry's own list
-  return docs;
+  const idx = (await (await safeGet(fetch, `${base}/api/index.json`)).json()) as { registryCommit?: string; docs?: Record<string, string> };
+  const pinned = new Set(Object.values(idx.docs || {}));
+  const all = [docs.manifest, docs.creator, ...docs.attestations, ...docs.revocations, ...(docs.versions || []), ...(docs.keyRevocations || []), ...Object.values(docs.attesters || {})].filter((d): d is Doc => !!d);
+  const bad = all.filter((d) => !pinned.has(docHash(d)));
+  if (bad.length) die(`${bad.length} document(s) don't match the registry index hashes; try --git`);
+  const listed = Object.keys(idx.docs || {}).filter((p) => p.startsWith(`bots/${platform}/${botId}/attestations/`)).length;
+  if (listed !== docs.attestations.length) die(`the index lists ${listed} review(s) but the API returned ${docs.attestations.length}; try --git`);
+  return { ...docs, note: `registry commit ${idx.registryCommit || "unknown"} (index hashes match)` };
 }
 
 async function main() {
@@ -82,7 +100,7 @@ async function main() {
     platform: { type: "string" }, bot: { type: "string" }, name: { type: "string" }, model: { type: "string" },
     "bot-version": { type: "string" }, "prompt-file": { type: "string" }, proof: { type: "string" },
     url: { type: "string" }, tag: { type: "string" }, note: { type: "string" }, reason: { type: "string" },
-    registry: { type: "string" }, base: { type: "string" }, author: { type: "string" }, to: { type: "string" }, "to-key": { type: "string" }, "version-hash": { type: "string" }, key: { type: "boolean" }, since: { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
+    registry: { type: "string" }, base: { type: "string" }, author: { type: "string" }, to: { type: "string" }, "to-key": { type: "string" }, "version-hash": { type: "string" }, key: { type: "boolean" }, git: { type: "boolean" }, since: { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
   } });
   if (o.version) return console.log(VERSION);
   if (!cmd || o.help) return console.log(HELP);
@@ -280,7 +298,7 @@ async function main() {
     }
     case "verify": {
       const { platform, botId } = botRef(args[0]);
-      const docs = await fetchBundle(platform, botId, o.registry);
+      const docs = await fetchBundle(platform, botId, o.registry, o.git);
       const res = await evaluate(docs);
       if (o.json) return console.log(JSON.stringify(res, null, 2));
       const ok = (b: boolean) => (b ? "✓" : "✗");
@@ -293,6 +311,7 @@ async function main() {
       for (const a of res.attestations.filter((x) => x.status !== "earlier version")) console.log(`  ${a.tag} by ${a.attester}: ${a.status}${a.weight ? ` (${a.weight > 0 ? "+" : ""}${a.weight})` : ""}`);
       console.log(`score ${res.score} = identity ${res.breakdown.identity} + ownership ${res.breakdown.ownership} + reviews ${res.breakdown.reviews}`);
       console.log(`hash ${res.versionHash}`);
+      if (docs.note) console.log(docs.note);
       if (res.errors.length || res.strength === "revoked") process.exit(2);
       break;
     }
