@@ -1,0 +1,25 @@
+{
+  "name": "botproof",
+  "version": "0.1.0",
+  "description": "Signed, checkable identity for AI agents, anchored on the creator.",
+  "type": "module",
+  "bin": {
+    "botproof": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test dist/test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "repository": "github:ao3575911/botproof",
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}
