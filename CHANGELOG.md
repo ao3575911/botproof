@@ -2,6 +2,11 @@
 
 All notable changes follow [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+- `init --bot https://x.ai/bot/<id>` works without `--platform`, as the README shows.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added
@@ -25,3 +30,7 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - Proof strength labels: self-claimed, challenge-passed, platform-signed (stub), revoked.
 - Score with a visible breakdown: identity, ownership, reviews. Reviews are weighted by reviewer trust; self-reviews are rejected.
 - `registry check` and `registry build` for the registry's CI and Pages site.
+
+[Unreleased]: https://github.com/ao3575911/botproof/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ao3575911/botproof/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/ao3575911/botproof/releases/tag/v0.1.0

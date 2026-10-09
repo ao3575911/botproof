@@ -63,9 +63,10 @@ async function main() {
 
   switch (cmd) {
     case "init": {
-      if (!o.platform || !o.bot) die("init needs --platform and --bot");
-      const share = o.bot!.match(/^https:\/\/x\.ai\/bot\/([A-Za-z0-9_-]+)/);
-      if (share) { o.platform = "grok"; o.bot = share[1]; }
+      const share = o.bot?.match(/^https:\/\/x\.ai\/bot\/([A-Za-z0-9_-]+)\/?$/);
+      if (share) { o.platform ??= "grok"; o.bot = share[1]; }
+      if (!o.platform || !o.bot) die("init needs --bot <x.ai/bot link>, or --platform and --bot");
+      if (share && o.platform !== "grok") die("an x.ai/bot link is a grok bot");
       if (!ID_RE.test(o.platform!) || !ID_RE.test(o.bot!)) die("platform and bot id may use letters, digits, . _ -");
       const k = key();
       const m: Doc = { v: 1, type: "bot", platform: o.platform, botId: o.bot, name: o.name || o.bot, model: o.model,
