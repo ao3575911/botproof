@@ -1,52 +1,59 @@
 # botproof
 
-**Know who made the bot.** Signed, checkable identity for AI agents, anchored on a real creator.
+**Know who made the bot.** Signed, checkable creator identity for AI agents, verifiable by anyone in one command.
 
-Anyone can copy a bot and call it theirs. botproof lets a creator prove who they are, prove they control the bot, and collect reviews from people who can be traced too. Everything is signed and kept in a public git registry. No server, no account, no fees.
+[![ci](https://github.com/ao3575911/botproof/actions/workflows/ci.yml/badge.svg)](https://github.com/ao3575911/botproof/actions/workflows/ci.yml) [![release](https://img.shields.io/github/v/release/ao3575911/botproof)](https://github.com/ao3575911/botproof/releases) [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE) [![provenance](https://img.shields.io/badge/release-attested-2ea44f)](RELEASING.md) ![demo bot](https://ao3575911.github.io/botproof-registry/badge/web/botproof-demo.svg)
 
-![example badge](https://ao3575911.github.io/botproof-registry/badge/web/botproof-demo.svg)
-
-## How it works
+Anyone can copy a bot and call it theirs. botproof lets a creator prove who they are, prove they control the bot, and collect reviews from people who can be traced too. Everything is signed and kept in a [public git registry](https://github.com/ao3575911/botproof-registry). No server, no account, no fees.
 
 ```mermaid
 flowchart LR
   A[You] -->|gist with your key| B(GitHub link)
   A -->|code on the bot's page| C(Bot challenge)
   B & C --> D[Signed claim]
-  D -->|pull request| E[(botproof-registry)]
-  E -->|CI checks proofs| F[Public API + badge]
+  D -->|pull request| E[(Registry)]
+  E -->|CI checks every proof| F[API + badge]
 ```
 
-## Try it
+## Claim your bot
 
-Needs Node 22 and the GitHub CLI (`gh`).
+Needs Node 22+ and the GitHub CLI.
 
 ```bash
-npm i -g github:ao3575911/botproof
+npm i -g github:ao3575911/botproof          # npx botproof once it's on npm
 botproof init --bot https://x.ai/bot/<id> --name "My Bot"
-botproof link github <you>                 # prints a line to put in a public gist
+botproof link github <you>                   # put the printed line in a public gist
 botproof link github <you> --proof <gist-url>
-botproof challenge                         # prints a code: add it to the bot's description,
-                                           # then update its share template
-botproof sign && botproof publish          # opens a PR to the registry
-botproof verify grok/<bot-id>
+botproof challenge                           # add the printed code to the bot's description
+botproof sign && botproof publish            # opens a PR; CI verifies it
 ```
 
-Other platforms: `botproof init --platform <name> --bot <id>` and `botproof challenge --url <bot's public page>`. Link more accounts with `botproof link x <post-url>` or `botproof link dns <domain>`.
+## Check a bot
 
-Review someone else's bot with `botproof attest <platform>/<bot-id> --tag reviewed`. Withdraw anything you signed with `botproof revoke <hash>`.
+```bash
+botproof verify grok/<id> --min-strength challenge-passed
+```
 
-## What the labels mean
+```yaml
+- uses: ao3575911/botproof@v0.3.0
+  with: { bot: grok/<id>, min-strength: challenge-passed }
+```
 
-| Label | Meaning |
+| Label | Means |
 |---|---|
-| **self-claimed** | Signed by the creator, but bot control is not proven |
-| **challenge-passed** | The bot's public page showed the creator's one-time code |
-| **platform-signed** | The platform signed a request the bot made to the creator's code URL ([Web Bot Auth](https://datatracker.ietf.org/doc/draft-meunier-web-bot-auth-architecture/)) |
-| **revoked** | The signer withdrew it |
+| **✓ platform-signed** | Challenge passed, and an allowlisted platform signed a request from the bot |
+| **✓ challenge-passed** | The bot's own page shows the creator's bound code |
+| **✓ verified creator** | The creator is proven; control of this bot isn't |
+| **revoked** | Withdrawn by the creator |
 
-The score shows its parts: identity (linked accounts), ownership (the label) and reviews (weighted by each reviewer's own trust). Self-reviews don't count.
+## Where it fits
 
-"Identity linked" means we know who made it. It does not mean the bot is safe.
+| | Signs | Answers |
+|---|---|---|
+| [A2A signed cards](https://github.com/a2aproject/A2A) | The agent card | What does this agent claim to be? |
+| [Web Bot Auth](https://datatracker.ietf.org/doc/draft-ietf-webbotauth-httpsig-protocol/) | Each HTTP request | Which operator sent this request? |
+| **botproof** | Creator ↔ bot, plus reviews | Who is behind it, and who vouches for them? |
 
-Registry and API: [ao3575911/botproof-registry](https://github.com/ao3575911/botproof-registry). MIT licence.
+botproof complements both, and uses Web Bot Auth as evidence. It proves identity, not safety: see the [threat model](docs/threat-model.md).
+
+[Docs](docs/README.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md) · MIT

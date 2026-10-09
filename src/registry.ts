@@ -272,11 +272,18 @@ export async function check(dir: string, f: Fetch = fetch, opts: CheckOpts = {})
   return errs;
 }
 
-const COLORS: Record<string, string> = { "challenge-passed": "#2ea44f", "platform-signed": "#0969da", "self-claimed": "#8b949e", revoked: "#cf222e" };
+const COLORS: Record<string, string> = { "challenge-passed": "#2ea44f", "platform-signed": "#0969da", "self-claimed": "#57606a", revoked: "#cf222e" };
 const esc = (s: string) => s.replace(/[<>&"'`]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-export function badge(strength: string, score: number): string {
-  const l = "botproof", r = `${strength} · ${score}`;
+/** Badge text: the proof label, not the score (the score is in the API). */
+export function badgeLabel(strength: string, creatorVerified: boolean): string {
+  if (strength === "challenge-passed" || strength === "platform-signed") return `✓ ${strength}`;
+  if (strength === "self-claimed" && creatorVerified) return "✓ verified creator";
+  return strength;
+}
+
+export function badge(strength: string, label = badgeLabel(strength, false)): string {
+  const l = "botproof", r = label;
   const lw = 6 * l.length + 12, rw = Math.round(6.2 * r.length) + 12, w = lw + rw;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="20" role="img" aria-label="${esc(l)}: ${esc(r)}">` +
     `<rect width="${lw}" height="20" fill="#24292f"/><rect x="${lw}" width="${rw}" height="20" fill="${COLORS[strength] || "#8b949e"}"/>` +
@@ -314,7 +321,7 @@ export async function build(dir: string, out: string, f0: Fetch = fetch, registr
     const key = `${res.platform}/${res.botId}`;
     const attesters = Object.fromEntries(bundle.attestations.map((a) => [a.attester, creators[a.attester as string]]).filter(([, c]) => c));
     put(`api/bots/${key}.json`, JSON.stringify({ ...res, docs: { ...bundle, attesters } }, null, 2));
-    put(`badge/${key}.svg`, badge(res.strength, res.score));
+    put(`badge/${key}.svg`, badge(res.strength, badgeLabel(res.strength, res.links.some((x) => x.type === "github" && x.status === "verified"))));
     index.push({ platform: res.platform, botId: res.botId, name: res.name, creator: res.creator, strength: res.strength, score: res.score, api: `api/bots/${key}.json`, badge: `badge/${key}.svg` });
   }
   for (const [h, c] of Object.entries(creators)) {

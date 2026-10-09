@@ -11,6 +11,10 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 ### Release
 - `release` workflow on `v*` tags: tests, `npm pack`, `SHA256SUMS`, build-provenance attestation, GitHub Release with assets, and `npm publish --provenance` when `NPM_TOKEN` is set. Tags are GPG-signed; the public key is in `.github/release-signing-key.asc`. See RELEASING.md.
 
+### Docs and governance
+- `docs/`: quickstart, how it works, threat model, spec, API, platforms, consumers, keys, FAQ. New README, SECURITY.md, CODEOWNERS, Dependabot (npm + actions). All actions are pinned by commit SHA.
+- Badges show the proof label (`✓ challenge-passed`, `✓ verified creator`); the score stays in the API.
+
 ### For consumers
 - GitHub Action (`uses: ao3575911/botproof@v0.3.0`): inputs `bot`, `min-strength`, `registry`, `trust`; outputs `strength`, `score`, `hash`; fails the job below the threshold.
 - `verify --min-strength <s>` exits 3 below it. Exit codes are documented in `--help`.
