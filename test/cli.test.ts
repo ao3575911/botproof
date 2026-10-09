@@ -27,3 +27,12 @@ test("bad CLI input fails cleanly", () => {
   for (const args of [["init", "--platform", "web", "--bot", "../../etc/passwd"], ["init", "--platform", "<x>", "--bot", "b"], ["verify", "a/b/c"], ["revoke", "nothex"], ["frobnicate"]])
     assert.equal(cli(args, s.cwd, s.env).code, 1, args.join(" "));
 });
+
+test("the key file is encrypted by default; no passphrase, no key", () => {
+  const s = sandbox();
+  assert.equal(cli(["init", "--platform", "web", "--bot", "b"], s.cwd, s.env).code, 0);
+  assert.match(readFileSync(join(s.env.BOTPROOF_HOME, "key.pem"), "utf8"), /ENCRYPTED PRIVATE KEY/);
+  assert.equal(cli(["key"], s.cwd, { ...s.env, BOTPROOF_PASSPHRASE: "wrong" }).code, 1);
+  const t = sandbox();
+  assert.equal(cli(["init", "--platform", "web", "--bot", "b"], t.cwd, { BOTPROOF_HOME: t.env.BOTPROOF_HOME, BOTPROOF_PASSPHRASE: "" }).code, 1);
+});

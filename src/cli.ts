@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { randomBytes } from "node:crypto";
-import { Doc, ID_RE, PLATFORMS, docHash, home, loadOrCreateKey, now, sha256, signDoc, slug } from "./core.js";
+import { Doc, ID_RE, PLATFORMS, docHash, home, loadOrCreateKey, now, rotationDoc, sha256, signDoc, slug } from "./core.js";
 import { X_POST, challengeText, checkDns, checkGithub, checkX, proofText } from "./proofs.js";
 import { Bundle, build, check, evaluate, load } from "./registry.js";
 import { checkPlatformEvidence } from "./platform.js";
@@ -35,8 +35,12 @@ const HELP = `botproof ${VERSION}: signed identity for AI agents
   transfer <platform>/<botId> --to github:<user> --to-key <key>
                               hand a bot to another creator
   revoke <hash> [--reason t]  withdraw something you signed
+  revoke --key [--since date] revoke your key (lost or stolen); its later signatures are void
+  rotate                      move to a new key; your bots stay yours
+  key [export]                show your key id, or print the encrypted key for backup
 
-  Files: key and creator profile in ${home()}, manifest in ./${MANIFEST}`;
+  Files: encrypted key and creator profile in ${home()}, manifest in ./${MANIFEST}
+  Passphrase: prompted, or BOTPROOF_PASSPHRASE`;
 
 const die = (msg: string): never => { console.error("error: " + msg); process.exit(1); };
 const rd = (p: string) => JSON.parse(readFileSync(p, "utf8")) as Doc;
@@ -50,6 +54,15 @@ function botRef(ref?: string) {
   const [platform, botId] = (ref || "").split("/");
   if (!platform || !botId || !ID_RE.test(platform) || !ID_RE.test(botId)) die("expected <platform>/<botId>");
   return { platform, botId };
+}
+
+async function askHidden(prompt: string): Promise<string> {
+  const { createInterface } = await import("node:readline");
+  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => { if (s.includes(prompt)) process.stdout.write(prompt); };
+  const answer = await new Promise<string>((r) => rl.question(prompt, r));
+  rl.close(); process.stdout.write("\n");
+  return answer;
 }
 
 async function fetchBundle(platform: string, botId: string, registry?: string): Promise<Bundle> {
@@ -67,11 +80,16 @@ async function main() {
     platform: { type: "string" }, bot: { type: "string" }, name: { type: "string" }, model: { type: "string" },
     "bot-version": { type: "string" }, "prompt-file": { type: "string" }, proof: { type: "string" },
     url: { type: "string" }, tag: { type: "string" }, note: { type: "string" }, reason: { type: "string" },
-    registry: { type: "string" }, base: { type: "string" }, author: { type: "string" }, to: { type: "string" }, "to-key": { type: "string" }, "version-hash": { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
+    registry: { type: "string" }, base: { type: "string" }, author: { type: "string" }, to: { type: "string" }, "to-key": { type: "string" }, "version-hash": { type: "string" }, key: { type: "boolean" }, since: { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
   } });
   if (o.version) return console.log(VERSION);
   if (!cmd || o.help) return console.log(HELP);
-  const key = () => loadOrCreateKey();
+  const key = async () => {
+    const f = join(home(), "key.pem");
+    if (!process.env.BOTPROOF_PASSPHRASE && process.stdin.isTTY && (!existsSync(f) || readFileSync(f, "utf8").includes("ENCRYPTED")))
+      process.env.BOTPROOF_PASSPHRASE = await askHidden("Key passphrase: ");
+    try { return loadOrCreateKey(); } catch (e) { return die((e as Error).message); }
+  };
   const creator = (): Doc => existsSync(creatorFile()) ? rd(creatorFile()) : die("no creator profile: run `botproof link github <user>` first");
 
   switch (cmd) {
@@ -82,7 +100,7 @@ async function main() {
       if (share && o.platform !== "grok") die("an x.ai/bot link is a grok bot");
       if (!PLATFORMS.includes(o.platform!)) die(`platform must be one of ${PLATFORMS.join(", ")}`);
       if (!ID_RE.test(o.bot!)) die("bot id may use letters, digits, . _ -");
-      const k = key();
+      const k = await key();
       const m: Doc = { v: 1, type: "bot", platform: o.platform, botId: o.bot, name: o.name || o.bot, model: o.model,
         version: o["bot-version"] || "0.1.0", promptHash: o["prompt-file"] ? "sha256:" + sha256(readFileSync(o["prompt-file"]!)) : undefined };
       wr(MANIFEST, m);
@@ -92,7 +110,7 @@ async function main() {
     case "link": {
       const [type, subject] = args;
       if (!type || !subject) die("usage: link github <user> | link x <url> | link dns <domain>");
-      const k = key();
+      const k = await key();
       const c: Doc = existsSync(creatorFile()) ? rd(creatorFile()) : { v: 1, type: "creator", links: [] };
       let links = (c.links as Record<string, string>[]).filter((l) => l.type !== type);
       if (type === "github") {
@@ -132,7 +150,7 @@ async function main() {
       if (!o.url) die("challenge needs --url <public page of the bot>");
       const nonce = randomBytes(9).toString("hex");
       wr(MANIFEST, { ...m, challenge: { nonce, url: o.url, issued: now() }, sig: undefined, key: undefined });
-      console.log(`Show this on ${o.url} (bot description, bio or a reply), then run botproof sign:\n\n${challengeText(String(m.platform), String(m.botId), loadOrCreateKey().id, nonce)}`);
+      console.log(`Show this on ${o.url} (bot description, bio or a reply), then run botproof sign:\n\n${challengeText(String(m.platform), String(m.botId), (await key()).id, nonce)}`);
       break;
     }
     case "evidence": {
@@ -146,7 +164,7 @@ async function main() {
       break;
     }
     case "sign": {
-      const k = key(), c = creator();
+      const k = await key(), c = creator();
       if (c.key !== k.id) die("creator profile was signed with another key; run link github again");
       const prev = rd(MANIFEST);
       const m: Doc = signDoc({ ...prev, seq: (Number(prev.seq) || 0) + 1, creator: c.handle, ts: now() }, k.priv);
@@ -158,7 +176,7 @@ async function main() {
       const { platform, botId } = botRef(args[0]);
       const tags = ["reviewed", "audited", "used-ok", "flagged"];
       if (!o.tag || !tags.includes(o.tag)) die("--tag must be one of " + tags.join(", "));
-      const k = key(), c = creator();
+      const k = await key(), c = creator();
       let versionHash = o["version-hash"];
       if (!versionHash) {
         const res = await fetchBundle(platform, botId, o.registry).then((b) => docHash(b.manifest));
@@ -174,17 +192,43 @@ async function main() {
     case "transfer": {
       const { platform, botId } = botRef(args[0]);
       if (!o.to?.match(/^github:[A-Za-z0-9-]+$/) || !o["to-key"]?.startsWith("ed25519:")) die("usage: transfer <platform>/<botId> --to github:<user> --to-key <their key id>");
-      const t = signDoc({ v: 1, type: "transfer", platform, botId, to: o.to, toKey: o["to-key"], ts: now() }, key().priv);
+      const t = signDoc({ v: 1, type: "transfer", platform, botId, to: o.to, toKey: o["to-key"], ts: now() }, (await key()).priv);
       wr(join(outbox(), "bots", platform, botId, "transfers", `${docHash(t)}.json`), t);
       console.log(`transfer to ${o.to} signed; run botproof publish, then they publish their manifest`);
       break;
     }
     case "revoke": {
+      const k = await key();
+      if (o.key) {
+        const c = creator();
+        const since = o.since ? new Date(o.since).toISOString() : now();
+        const r = signDoc({ v: 1, type: "key-revocation", revokedKey: k.id, since, reason: o.reason || "", ts: now() }, k.priv);
+        wr(join(outbox(), "keys", slug(String(c.handle)), `revoked-${docHash(r)}.json`), r);
+        console.log(`key ${k.id} revoked from ${since}; run botproof publish. Anything it signs from then on is invalid.\nTo keep your bots, run botproof rotate first.`);
+        break;
+      }
       const target = args[0];
-      if (!/^[0-9a-f]{64}$/.test(target || "")) die("revoke needs the sha256 hash of the signed document (shown by verify)");
-      const r = signDoc({ v: 1, type: "revocation", target, reason: o.reason || "", ts: now() }, key().priv);
+      if (!/^[0-9a-f]{64}$/.test(target || "")) die("revoke needs the sha256 hash of the signed document (shown by verify), or --key");
+      const r = signDoc({ v: 1, type: "revocation", target, reason: o.reason || "", ts: now() }, k.priv);
       wr(join(outbox(), "revocations", `${target}.json`), r);
       console.log(`revocation signed for ${target}; run botproof publish`);
+      break;
+    }
+    case "rotate": {
+      const c = creator(), old = await key();
+      renameSync(old.file, join(home(), `key-${Date.now()}.old.pem`));
+      const nw = await key();
+      const rot = rotationDoc(String(c.handle), old.priv, nw.priv);
+      wr(join(outbox(), "keys", slug(String(c.handle)), `rotation-${docHash(rot)}.json`), rot);
+      wr(creatorFile(), signDoc({ ...c, ts: now() }, nw.priv));
+      const user = String(c.handle).replace(/^github:/, "");
+      console.log(`new key ${nw.id} (old key kept as a .old.pem file)\n\n1. Replace the line in your proof gist with:\n   ${proofText("github", user, nw.id)}\n2. botproof link github ${user} --proof <gist-url>\n3. For each bot: botproof challenge, update its page, botproof sign\n4. botproof publish (optionally botproof revoke --key with the old key first)`);
+      break;
+    }
+    case "key": {
+      const k = await key();
+      if (args[0] === "export") process.stdout.write(readFileSync(k.file, "utf8"));
+      else console.log(`key ${k.id}\nfile ${k.file}\nencrypted ${k.encrypted ? "yes" : "NO: rotate to an encrypted key"}`);
       break;
     }
     case "publish": {

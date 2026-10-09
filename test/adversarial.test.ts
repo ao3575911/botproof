@@ -193,7 +193,7 @@ test("A7 rollback to an older signed version", async () => {
   assert.ok(errs.some((e) => /seq|rollback|older/.test(e)), errs.join("; "));
   assert.ok((await evaluate(bundle(d, "web/alice-bot"), f)).errors.length > 0);
 });
-test("A8 stolen key: manifests signed after key revocation are invalid", { todo: true }, async () => {
+test("A8 stolen key: manifests signed after key revocation are invalid", async () => {
   const d = adv();
   assert.equal(alice.run("revoke", "--key", "--reason", "key stolen").code, 0);
   alice.run("publish", "--to-dir", d);
@@ -310,6 +310,22 @@ test("N8 evidence + copied challenge cannot take over a grok bot", { todo: true 
   const ev = selfIssued(`/botproof/${(grace.manifest.challenge as { nonce: string }).nonce}`, "mallory.example", "https://agent.mallory.example");
   write(d, "bots/grok/GrokBot123/manifest.json", mallory.craft({ v: 1, type: "bot", platform: "grok", botId: "GrokBot123", name: "Grace Helper", version: "9.9.9", seq: 99, challenge: grace.manifest.challenge, platformEvidence: ev, creator: "github:mallory", ts: new Date().toISOString() }));
   await blocked(d, "grok/GrokBot123", { author: "mallory" });
+});
+
+test("K1 a rotated key keeps the bot", async () => {
+  const a = new Actor("alice"); a.home = join(ROOT, "home", "alice-rot"); a.cwd = join(ROOT, "work", "alice-rot");
+  cpSync(alice.home, a.home, { recursive: true }); cpSync(alice.cwd, a.cwd, { recursive: true }); a.env.BOTPROOF_HOME = a.home;
+  rmSync(join(a.home, "out"), { recursive: true, force: true });
+  const r = a.run("rotate"); assert.equal(r.code, 0, r.out);
+  web.gists[gid("galice")].content = r.out.match(/botproof-proof:\S+/)![0]; save();
+  assert.equal(a.run("link", "github", "alice", "--proof", `https://gist.github.com/alice/${gid("galice")}`).code, 0);
+  a.challenge(ALICE_PAGE, showOnGist(a, "alicebot"));
+  assert.equal(a.run("sign").code, 0);
+  const d = adv(); assert.equal(a.run("publish", "--to-dir", d).code, 0);
+  assert.deepEqual(await check(d, f, { baseDir: REG, author: "alice" }), []);
+  const res = await evaluate(bundle(d, "web/alice-bot"), f);
+  assert.equal(res.strength, "challenge-passed", res.ownershipDetail);
+  assert.ok(readFileSync(join(a.home, "key.pem"), "utf8").includes("ENCRYPTED PRIVATE KEY"));
 });
 
 test("cleanup", () => rmSync(ROOT, { recursive: true, force: true }));

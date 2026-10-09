@@ -54,17 +54,43 @@ export function home(): string {
   return process.env.BOTPROOF_HOME || join(process.env.HOME || ".", ".botproof");
 }
 
-export function loadOrCreateKey(dir = home()): { priv: KeyObject; id: string; created: boolean } {
+/**
+ * The creator's Ed25519 key, stored as passphrase-encrypted PKCS#8 (AES-256-CBC) at <home>/key.pem, mode 0600.
+ * Passphrase: BOTPROOF_PASSPHRASE, or the CLI prompts for it. BOTPROOF_PLAINTEXT_KEY=1 opts out of encryption.
+ */
+export function loadOrCreateKey(dir = home(), passphrase = process.env.BOTPROOF_PASSPHRASE) {
   const file = join(dir, "key.pem");
   let created = false;
   if (!existsSync(file)) {
+    const plain = process.env.BOTPROOF_PLAINTEXT_KEY === "1";
+    if (!passphrase && !plain) throw new Error("a passphrase is needed for your new key: set BOTPROOF_PASSPHRASE or run in a terminal");
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const { privateKey } = generateKeyPairSync("ed25519");
-    writeFileSync(file, privateKey.export({ format: "pem", type: "pkcs8" }), { mode: 0o600, flag: "wx" });
+    const pem = plain ? privateKey.export({ format: "pem", type: "pkcs8" })
+      : privateKey.export({ format: "pem", type: "pkcs8", cipher: "aes-256-cbc", passphrase: passphrase! });
+    writeFileSync(file, pem, { mode: 0o600, flag: "wx" });
     created = true;
   }
-  const priv = createPrivateKey(readFileSync(file));
-  return { priv, id: keyId(createPublicKey(priv)), created };
+  const pem = readFileSync(file, "utf8"), encrypted = pem.includes("ENCRYPTED PRIVATE KEY");
+  if (encrypted && !passphrase) throw new Error("your key is encrypted: set BOTPROOF_PASSPHRASE or run in a terminal");
+  let priv: KeyObject;
+  try { priv = createPrivateKey(encrypted ? { key: pem, format: "pem", passphrase } : pem); }
+  catch { throw new Error("wrong passphrase for " + file); }
+  return { priv, id: keyId(createPublicKey(priv)), created, encrypted, file };
+}
+
+/** Rotation: signed by the new key, with `oldSig` from the old key over the same body. */
+export function rotationDoc(handle: string, oldPriv: KeyObject, newPriv: KeyObject): Doc {
+  const body = { v: 1, type: "key-rotation", handle, oldKey: keyId(createPublicKey(oldPriv)), newKey: keyId(createPublicKey(newPriv)), ts: now() };
+  const oldSig = sign(null, Buffer.from(canonical(body)), oldPriv).toString("base64url");
+  return signDoc({ ...body, oldSig }, newPriv);
+}
+
+export function verifyRotation(d: Doc): boolean {
+  if (d.type !== "key-rotation" || !verifyDoc(d) || d.key !== d.newKey) return false;
+  const { sig: _s, key: _k, oldSig, ...body } = d;
+  try { return verify(null, Buffer.from(canonical(body)), publicKey(String(d.oldKey)), Buffer.from(String(oldSig), "base64url")); }
+  catch { return false; }
 }
 
 export const slug = (handle: string) => handle.replace(/:/g, "-");
