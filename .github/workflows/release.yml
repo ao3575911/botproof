@@ -1,7 +1,8 @@
 name: release
+# Run from the Actions tab (or `gh workflow run release`) on main after the version-bump PR is merged.
+# CI creates and GPG-signs the tag; the signing key lives only in the RELEASE_GPG_KEY secret.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 permissions:
   contents: write
   id-token: write
@@ -10,14 +11,27 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, registry-url: "https://registry.npmjs.org" }
+      - name: Release from main only; tag = package.json version
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          echo "TAG=v$(node -p 'require("./package.json").version')" >> "$GITHUB_ENV"
       - run: npm ci && npm test
-      - name: Tag matches package.json
-        run: test "v$(node -p 'require("./package.json").version')" = "$TAG"
+      - name: Create and push the GPG-signed tag
+        env: { GPG_KEY: "${{ secrets.RELEASE_GPG_KEY }}" }
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then echo "::error::$TAG already exists"; exit 1; fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"; mkdir -m 700 "$GNUPGHOME"
+          printf '%s\n' "$GPG_KEY" | gpg --batch --quiet --import
+          fpr=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          git -c user.name=ao3575911 -c user.email=280728713+ao3575911@users.noreply.github.com \
+              -c user.signingkey="$fpr" tag -s "$TAG" -m "$TAG"
+          gpg --import .github/release-signing-key.asc 2>/dev/null; git tag -v "$TAG"
+          git push origin "refs/tags/$TAG"
+          rm -rf "$GNUPGHOME"
       - name: Pack and checksum
         run: |
           npm pack
