@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { randomBytes } from "node:crypto";
-import { Doc, ID_RE, docHash, home, loadOrCreateKey, now, sha256, signDoc, slug } from "./core.js";
+import { Doc, ID_RE, PLATFORMS, docHash, home, loadOrCreateKey, now, sha256, signDoc, slug } from "./core.js";
 import { X_POST, challengeText, checkDns, checkGithub, checkX, proofText } from "./proofs.js";
 import { build, check, evaluate } from "./registry.js";
 import { checkPlatformEvidence } from "./platform.js";
@@ -68,7 +68,8 @@ async function main() {
       if (share) { o.platform ??= "grok"; o.bot = share[1]; }
       if (!o.platform || !o.bot) die("init needs --bot <x.ai/bot link>, or --platform and --bot");
       if (share && o.platform !== "grok") die("an x.ai/bot link is a grok bot");
-      if (!ID_RE.test(o.platform!) || !ID_RE.test(o.bot!)) die("platform and bot id may use letters, digits, . _ -");
+      if (!PLATFORMS.includes(o.platform!)) die(`platform must be one of ${PLATFORMS.join(", ")}`);
+      if (!ID_RE.test(o.bot!)) die("bot id may use letters, digits, . _ -");
       const k = key();
       const m: Doc = { v: 1, type: "bot", platform: o.platform, botId: o.bot, name: o.name || o.bot, model: o.model,
         version: o["bot-version"] || "0.1.0", promptHash: o["prompt-file"] ? "sha256:" + sha256(readFileSync(o["prompt-file"]!)) : undefined };
@@ -119,7 +120,7 @@ async function main() {
       if (!o.url) die("challenge needs --url <public page of the bot>");
       const nonce = randomBytes(9).toString("hex");
       wr(MANIFEST, { ...m, challenge: { nonce, url: o.url, issued: now() }, sig: undefined, key: undefined });
-      console.log(`Show this on ${o.url} (bot description, bio or a reply), then run botproof sign:\n\n${challengeText(nonce)}`);
+      console.log(`Show this on ${o.url} (bot description, bio or a reply), then run botproof sign:\n\n${challengeText(String(m.platform), String(m.botId), loadOrCreateKey().id, nonce)}`);
       break;
     }
     case "evidence": {

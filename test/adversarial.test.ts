@@ -144,7 +144,7 @@ test("A1b random signature bytes are rejected", async () => {
   write(d, "bots/web/alice-bot/manifest.json", { ...JSON.parse(readFileSync(p, "utf8")), sig: "A".repeat(86) });
   assert.ok((await check(d, f)).length > 0);
 });
-test("A2 replayed challenge on another bot", { todo: true }, async () => {
+test("A2 replayed challenge on another bot", async () => {
   const d = adv(); write(d, "creators/github-mallory.json", mc());
   write(d, "bots/web/mallory-bot/manifest.json", mallory.craft({ v: 1, type: "bot", platform: "web", botId: "mallory-bot", name: "Mallory Bot", version: "0.1.0", seq: 1, challenge: v1.challenge, creator: "github:mallory", ts: new Date().toISOString() }));
   await blocked(d, "web/mallory-bot", { author: "mallory" });
@@ -256,7 +256,7 @@ test("N1b grok flow: code in the share page description → challenge-passed", a
   assert.deepEqual(await check(REG, f, { author: "grace" }), []); commit();
   assert.equal((await evaluate(bundle(REG, "grok/GrokBot123"), f)).strength, "challenge-passed");
 });
-test("N2 grok takeover with a copied code", { todo: true }, async () => {
+test("N2 grok takeover with a copied code", async () => {
   const d = adv(); write(d, "creators/github-mallory.json", mc());
   write(d, "bots/grok/GrokBot123/manifest.json", mallory.craft({ v: 1, type: "bot", platform: "grok", botId: "GrokBot123", name: "Grace Helper", version: "9.0.0", seq: 99, challenge: grace.manifest.challenge, creator: "github:mallory", ts: new Date().toISOString() }));
   await blocked(d, "grok/GrokBot123", { author: "mallory" });

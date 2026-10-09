@@ -68,5 +68,6 @@ export function loadOrCreateKey(dir = home()): { priv: KeyObject; id: string; cr
 }
 
 export const slug = (handle: string) => handle.replace(/:/g, "-");
+export const PLATFORMS = ["grok", "web"];
 export const ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
 export const now = () => new Date().toISOString();
