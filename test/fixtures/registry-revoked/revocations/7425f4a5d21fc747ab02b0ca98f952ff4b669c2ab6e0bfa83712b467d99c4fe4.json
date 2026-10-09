@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "type": "revocation",
+  "target": "7425f4a5d21fc747ab02b0ca98f952ff4b669c2ab6e0bfa83712b467d99c4fe4",
+  "reason": "fixture",
+  "ts": "2026-10-09T00:00:00.000Z",
+  "key": "ed25519:Ndx8vgu9UZY9V7fcGDiVkLxbuY_qaz7uABYW8Rd_kas",
+  "sig": "TYTM0dDv9welThM16QLT9cUVSDw7ph3gvmfqwUVxWc-RVndm6hPPwnjl5QpOFYJQsyq8eSkN2nb8UI7gytAqDQ"
+}

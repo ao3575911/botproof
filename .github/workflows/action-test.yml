@@ -1,0 +1,25 @@
+name: action-test
+on:
+  pull_request:
+    paths: ["action.yml", "src/**", ".github/workflows/action-test.yml"]
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  revoked-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        uses: ./
+        continue-on-error: true
+        with: { bot: web/revoked-demo, registry: test/fixtures/registry-revoked }
+      - run: test "${{ steps.v.outcome }}" = failure && test "${{ steps.v.outputs.strength }}" = revoked
+  demo-passes:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        uses: ./
+        with: { bot: web/botproof-demo }
+      - run: echo "strength=${{ steps.v.outputs.strength }} score=${{ steps.v.outputs.score }}"

@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "type": "bot",
+  "platform": "web",
+  "botId": "revoked-demo",
+  "name": "Revoked demo",
+  "version": "1.0.0",
+  "seq": 1,
+  "creator": "github:botproof-fixture",
+  "ts": "2026-10-09T00:00:00.000Z",
+  "key": "ed25519:Ndx8vgu9UZY9V7fcGDiVkLxbuY_qaz7uABYW8Rd_kas",
+  "sig": "s5JEmUh2I3nl_QiPicgyZqhDkXsrDBI_49A3VdvD34IEw7cvFqSxFvcDrT4AgbgWMt7XOUpeNhvGvtkN4xxtAQ"
+}
