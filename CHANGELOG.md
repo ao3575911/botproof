@@ -11,6 +11,10 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 ### Release
 - `release` workflow on `v*` tags: tests, `npm pack`, `SHA256SUMS`, build-provenance attestation, GitHub Release with assets, and `npm publish --provenance` when `NPM_TOKEN` is set. Tags are GPG-signed; the public key is in `.github/release-signing-key.asc`. See RELEASING.md.
 
+### Trust
+- Reviews from GitHub accounts under 90 days old, or with no repos and no followers, count 0 (review A6). Creator GitHub links weigh by account age: 50 (1y+), 35 (90 days+), 15 (new or unknown).
+- `verify --trust <handles|file>` counts only reviews from your own list.
+
 ### Registry API
 - `api/index.json` adds `schemaVersion`, `registryCommit` and a sha256 for every signed document. `verify` checks the bot's documents against those hashes and prints the commit.
 - `verify --git` checks a bot from a fresh clone of the registry, without trusting the API.

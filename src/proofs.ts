@@ -94,6 +94,19 @@ export async function checkChallenge(url: string, text: string, f: Fetch = fetch
   } catch (e) { return { ok: false, detail: String(e) }; }
 }
 
+/** GitHub account standing. New (< 90 days) or empty accounts are "new"; unreachable fails closed as "unknown". */
+export type Standing = { level: "established" | "young" | "new" | "unknown"; detail: string };
+export async function githubStanding(user: string, f: Fetch = fetch, now = Date.now()): Promise<Standing> {
+  try {
+    const r = await safeGet(f, `https://api.github.com/users/${encodeURIComponent(user)}`, { headers: ghHeaders() });
+    if (!r.ok) return { level: "unknown", detail: `account lookup ${r.status}` };
+    const u = (await r.json()) as { created_at?: string; public_repos?: number; followers?: number };
+    const days = (now - Date.parse(String(u.created_at))) / 86400e3;
+    if (!(days >= 90) || (!u.public_repos && !u.followers)) return { level: "new", detail: `account ${Math.floor(days || 0)} days old` };
+    return days >= 365 ? { level: "established", detail: `account ${Math.floor(days / 365)}y old` } : { level: "young", detail: `account ${Math.floor(days)} days old` };
+  } catch (e) { return { level: "unknown", detail: String(e) }; }
+}
+
 export const X_POST = /^https:\/\/(?:x|twitter)\.com\/(\w{1,15})\/status\/(\d+)/;
 
 /**

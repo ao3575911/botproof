@@ -170,7 +170,7 @@ test("A5 self-review is rejected", async () => {
   assert.ok(errs.some((e) => e.includes("self-review")));
   assert.ok(res.attestations.some((a) => a.status === "self-review rejected"));
 });
-test("A6 sybil: fresh sock accounts' reviews count 0", { todo: true }, async () => {
+test("A6 sybil: fresh sock accounts' reviews count 0", async () => {
   const d = adv(); write(d, "creators/github-mallory.json", mc());
   write(d, "bots/web/mallory-bot/manifest.json", mallory.craft({ v: 1, type: "bot", platform: "web", botId: "mallory-bot", name: "Mallory Bot", version: "0.1.0", seq: 1, creator: "github:mallory", ts: new Date().toISOString() }));
   for (const n of ["sock1", "sock2"]) {
@@ -180,6 +180,13 @@ test("A6 sybil: fresh sock accounts' reviews count 0", { todo: true }, async () 
   }
   const res = await evaluate(bundle(d, "web/mallory-bot"), f);
   assert.equal(res.breakdown.reviews, 0, JSON.stringify(res.attestations));
+});
+test("T1 verify --trust limits reviews to the list", async () => {
+  const b = bundle(REG, "web/alice-bot");
+  assert.equal((await evaluate(b, f, { trust: ["github:carol"] })).attestations[0].status, "not in your trust list");
+  assert.equal((await evaluate(b, f, { trust: ["github:bob"] })).attestations[0].status, "counted");
+  const r = alice.run("verify", "web/alice-bot", "--registry", REG, "--trust", "carol");
+  assert.match(r.out, /not in your trust list/);
 });
 test("A7 rollback to an older signed version", async () => {
   const d = adv();

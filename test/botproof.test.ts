@@ -23,6 +23,7 @@ const gists: Record<string, { login: string; content: string }> = {
 const N = "0123456789abcdef01", T = "2026-10-09T00:00:00.000Z";
 gists.ccc = { login: "alice", content: "bot page " + challengeText("web", "demo", id(alice), N) };
 const fakeFetch = (async (url: string) => {
+  if (/api\.github\.com\/users\//.test(String(url))) return new Response(JSON.stringify({ created_at: "2015-01-01T00:00:00Z", public_repos: 5, followers: 5 }));
   const g = String(url).match(/gists\/(\w+)$/);
   if (g && gists[g[1]]) return new Response(JSON.stringify({ owner: { login: gists[g[1]].login }, files: { f: { content: gists[g[1]].content } } }));
   return new Response("nope", { status: 404 });
