@@ -89,7 +89,7 @@ test("H0 package installs from git or npm (built bin committed, no prepare build
   const root = new URL("../../", import.meta.url);
   const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
   // a prepare build breaks `npm i -g github:...` (devDependencies are not installed there)
-  assert.ok(!pkg.scripts.prepare && pkg.bin.botproof && pkg.files.includes("dist/src"));
+  assert.ok(!pkg.scripts.prepare && !pkg.scripts.build && pkg.bin.botproof && pkg.files.includes("dist/src"));
   assert.ok(!readFileSync(new URL(".gitignore", root), "utf8").split("\n").includes("dist"), "dist/src must be committed");
   assert.ok(readFileSync(new URL(pkg.bin.botproof, root), "utf8").startsWith("#!/usr/bin/env node"));
 });

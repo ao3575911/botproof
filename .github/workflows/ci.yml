@@ -13,7 +13,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: committed dist/src matches src
-        run: git diff --exit-code -- dist/src || { echo "::error::dist/src is stale; run npm run build and commit it"; exit 1; }
+        run: git diff --exit-code -- dist/src || { echo "::error::dist/src is stale; run npm run compile and commit it"; exit 1; }
   smoke:
     runs-on: ubuntu-latest
     steps:
