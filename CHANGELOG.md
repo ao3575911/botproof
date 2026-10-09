@@ -9,7 +9,12 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - `publish --to-dir <dir>` writes the signed files into a local registry copy instead of opening a PR.
 
 ### Release
-- `release` workflow on `v*` tags: tests, `npm pack`, `SHA256SUMS`, build-provenance attestation, GitHub Release with assets, and `npm publish --provenance` when `NPM_TOKEN` is set. Tags are signed (SSH); the public key is in `.github/allowed_signers`. See RELEASING.md.
+- `release` workflow on `v*` tags: tests, `npm pack`, `SHA256SUMS`, build-provenance attestation, GitHub Release with assets, and `npm publish --provenance` when `NPM_TOKEN` is set. Tags are GPG-signed; the public key is in `.github/release-signing-key.asc`. See RELEASING.md.
+
+### Registry API
+- `api/index.json` adds `schemaVersion`, `registryCommit` and a sha256 for every signed document. `verify` checks the bot's documents against those hashes and prints the commit.
+- `verify --git` checks a bot from a fresh clone of the registry, without trusting the API.
+- Each URL is fetched once per Pages build.
 
 ### Security
 - Challenge codes are bound to the bot and the creator's key: `botproof-challenge:<platform>/<botId>:<keyId>:<nonce>`. A copied code no longer passes for another bot or key (review A2, N2).

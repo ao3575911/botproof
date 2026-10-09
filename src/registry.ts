@@ -280,7 +280,26 @@ export function badge(strength: string, score: number): string {
 }
 
 /** Build the static Pages site: JSON API + SVG badges. */
-export async function build(dir: string, out: string, f: Fetch = fetch) {
+/** Per-build cache: each URL is fetched once per build, however many bots point at it. */
+export function cachedFetch(f: Fetch): Fetch {
+  const seen = new Map<string, Promise<{ status: number; headers: [string, string][]; body: ArrayBuffer }>>();
+  return (async (url: string, init?: RequestInit) => {
+    const k = String(url);
+    if (!seen.has(k)) seen.set(k, f(url, init).then(async (r) => ({ status: r.status, headers: [...r.headers], body: await r.arrayBuffer() })));
+    const c = await seen.get(k)!;
+    return new Response(c.status === 204 ? null : c.body.slice(0), { status: c.status, headers: c.headers });
+  }) as Fetch;
+}
+
+/** sha256 (docHash) of every signed file, by path: the index clients pin against. */
+export function docIndex(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [rel, d] of signedFiles(dir)) if (d) out[rel] = docHash(d);
+  return out;
+}
+
+export async function build(dir: string, out: string, f0: Fetch = fetch, registryCommit = process.env.GITHUB_SHA || "") {
+  const f = cachedFetch(f0);
   const put = (p: string, s: string) => { mkdirSync(dirname(join(out, p)), { recursive: true }); writeFileSync(join(out, p), s); };
   const { creators, bots } = load(dir);
   const index = [];
@@ -297,7 +316,7 @@ export async function build(dir: string, out: string, f: Fetch = fetch) {
     const t = await creatorTrust(c, f);
     put(`api/creators/${slug(h)}.json`, JSON.stringify({ handle: h, key: c.key, ...t, doc: c }, null, 2));
   }
-  put("api/index.json", JSON.stringify({ generatedAt: new Date().toISOString(), bots: index }, null, 2));
+  put("api/index.json", JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), registryCommit, bots: index, docs: docIndex(dir) }, null, 2));
   const rows = index.map((b) => `<tr><td>${esc(String(b.name || b.botId))}</td><td>${esc(String(b.creator))}</td><td><a href="${esc(b.api)}"><img src="${esc(b.badge)}" alt="${esc(b.strength)}"></a></td></tr>`).join("");
   put("index.html", `<!doctype html><meta charset="utf-8"><title>botproof registry</title><style>body{font:15px system-ui;max-width:720px;margin:40px auto;padding:0 16px}td{padding:6px 12px 6px 0}</style><h1>botproof registry</h1><p>Signed identity for AI agents. <a href="api/index.json">JSON API</a> · <a href="https://github.com/ao3575911/botproof">CLI</a></p><table><tr><th align=left>Bot</th><th align=left>Creator</th><th align=left>Proof</th></tr>${rows}</table>`);
   return index;
