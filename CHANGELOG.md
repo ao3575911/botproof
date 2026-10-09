@@ -13,6 +13,8 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - `web` challenges must be on the creator's own gist or a DNS-proven domain. Only `grok` and `web` platforms are accepted.
 - `registry check` rejects a challenge nonce used by another bot or key.
 - First-come bot ownership: `registry check --base <ref> --author <login>` rejects a PR that changes another creator's bot, deletes signed files, or carries signatures from anyone but the PR author (review A3).
+- Anti-rollback: manifests carry a monotonic `seq` (set by `sign`). CI requires it to increase, and `verify` rejects a manifest older than any signed version in `versions/` (review A7).
+- Reviews carry the `versionHash` they reviewed. Reviews of earlier versions are shown but not counted, so a takeover can't inherit them (review A3).
 - `transfer <platform>/<botId> --to github:<user> --to-key <key>`: the owner signs a hand-over before the new owner publishes.
 - Grok share pages: only the title and description tags are read.
 

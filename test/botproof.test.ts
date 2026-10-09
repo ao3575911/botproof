@@ -34,10 +34,12 @@ const creator = (k: KeyObject, user: string, gist: string) =>
 function registry(files: Record<string, Doc>) {
   const dir = mkdtempSync(join(tmpdir(), "bp-"));
   mkdirSync(join(dir, "bots")); writeFileSync(join(dir, "bots", ".gitkeep"), "");
-  for (const [p, d] of Object.entries(files)) { mkdirSync(dirname(join(dir, p)), { recursive: true }); writeFileSync(join(dir, p), JSON.stringify(d)); }
+  const all: Record<string, Doc> = { ...files };
+  for (const [p, d] of Object.entries(files)) if (p.endsWith("/manifest.json")) all[p.replace("manifest.json", `versions/${docHash(d)}.json`)] = d;
+  for (const [p, d] of Object.entries(all)) { mkdirSync(dirname(join(dir, p)), { recursive: true }); writeFileSync(join(dir, p), JSON.stringify(d)); }
   return dir;
 }
-const manifest = signDoc({ v: 1, type: "bot", platform: "web", botId: "demo", name: "Demo", version: "1.0.0", creator: "github:alice", challenge: { nonce: N, url: "https://gist.github.com/alice/ccc" }, ts: T }, alice);
+const manifest = signDoc({ v: 1, type: "bot", platform: "web", botId: "demo", name: "Demo", version: "1.0.0", seq: 1, creator: "github:alice", challenge: { nonce: N, url: "https://gist.github.com/alice/ccc" }, ts: T }, alice);
 const base = { "creators/github-alice.json": creator(alice, "alice", "aaa"), "creators/github-bob.json": creator(bob, "bob", "bbb"), "bots/web/demo/manifest.json": manifest };
 
 test("canonical JSON sorts keys", () => assert.equal(canonical({ b: 1, a: [true, "x"] }), '{"a":[true,"x"],"b":1}'));
@@ -53,7 +55,7 @@ test("github gist proof must be owned by the user", async () => {
 });
 
 test("challenge-passed bot with a counted review from someone else", async () => {
-  const review = signDoc({ v: 1, type: "attestation", platform: "web", botId: "demo", attester: "github:bob", tag: "reviewed", note: "", ts: T }, bob);
+  const review = signDoc({ v: 1, type: "attestation", platform: "web", botId: "demo", attester: "github:bob", tag: "reviewed", note: "", versionHash: docHash(manifest), ts: T }, bob);
   const dir = registry({ ...base, "bots/web/demo/attestations/bob.json": review });
   assert.deepEqual(await check(dir, fakeFetch), []);
   const r = await evaluate(load(dir).bots[0].bundle, fakeFetch);
@@ -65,7 +67,7 @@ test("challenge-passed bot with a counted review from someone else", async () =>
 });
 
 test("self-reviews are rejected", async () => {
-  const self = signDoc({ v: 1, type: "attestation", platform: "web", botId: "demo", attester: "github:alice", tag: "reviewed", note: "", ts: T }, alice);
+  const self = signDoc({ v: 1, type: "attestation", platform: "web", botId: "demo", attester: "github:alice", tag: "reviewed", note: "", versionHash: docHash(manifest), ts: T }, alice);
   const dir = registry({ ...base, "bots/web/demo/attestations/alice.json": self });
   assert.ok((await check(dir, fakeFetch)).some((e) => e.includes("self-review rejected")));
   assert.equal((await evaluate(load(dir).bots[0].bundle, fakeFetch)).attestations[0].status, "self-review rejected");
@@ -95,7 +97,7 @@ test("grok share page: reads the description and finds the code", async () => {
 });
 
 test("grok claims only count a code on that bot's own share page", async () => {
-  const m = (url: string) => signDoc({ v: 1, type: "bot", platform: "grok", botId: "0fF7Cqp8LTzh9JGQ-je3M", name: "x", version: "1", creator: "github:alice", challenge: { nonce: N, url }, ts: T }, alice);
+  const m = (url: string) => signDoc({ v: 1, type: "bot", platform: "grok", botId: "0fF7Cqp8LTzh9JGQ-je3M", name: "x", version: "1", seq: 1, creator: "github:alice", challenge: { nonce: N, url }, ts: T }, alice);
   const ok = (async (u: string) => String(u).includes("gists") ? fakeFetch(u) : new Response(`<meta name="description" content="${challengeText("grok", "0fF7Cqp8LTzh9JGQ-je3M", id(alice), N)}"/>`)) as typeof fetch;
   const b = (url: string) => ({ manifest: m(url), creator: base["creators/github-alice.json"], attestations: [], attesters: {}, revocations: [] });
   assert.equal((await evaluate(b("https://x.ai/bot/0fF7Cqp8LTzh9JGQ-je3M"), ok)).strength, "challenge-passed");
@@ -142,18 +144,18 @@ test("web bot auth: signed request with the code makes a claim platform-signed",
 });
 
 test("ownership: a legit update and a signed transfer pass; takeover and wrong author fail", async () => {
-  const baseDir = registry(base);
-  const upd = signDoc({ ...manifest, sig: undefined, key: undefined, version: "1.1.0" }, alice);
-  const d1 = registry({ ...base, "bots/web/demo/manifest.json": upd });
+  const baseDir = registry(base), keepV = { [`bots/web/demo/versions/${docHash(manifest)}.json`]: manifest };
+  const upd = signDoc({ ...manifest, sig: undefined, key: undefined, version: "1.1.0", seq: 2 }, alice);
+  const d1 = registry({ ...base, ...keepV, "bots/web/demo/manifest.json": upd });
   assert.deepEqual(await check(d1, fakeFetch, { baseDir, author: "alice" }), []);
   assert.ok((await check(d1, fakeFetch, { baseDir, author: "bob" })).some((e) => e.includes("PR author")));
-  const take = signDoc({ ...manifest, sig: undefined, key: undefined, creator: "github:bob", challenge: undefined }, bob);
-  const d2 = registry({ ...base, "bots/web/demo/manifest.json": take });
+  const take = signDoc({ ...manifest, sig: undefined, key: undefined, creator: "github:bob", challenge: undefined, seq: 2 }, bob);
+  const d2 = registry({ ...base, ...keepV, "bots/web/demo/manifest.json": take });
   assert.ok((await check(d2, fakeFetch, { baseDir, author: "bob" })).some((e) => e.includes("owned by github:alice")));
   const t = signDoc({ v: 1, type: "transfer", platform: "web", botId: "demo", to: "github:bob", toKey: id(bob), ts: T }, alice);
   const d3 = registry({ ...base, "bots/web/demo/transfers/t.json": t });
   assert.deepEqual(await check(d3, fakeFetch, { baseDir, author: "alice" }), []);
-  const d4 = registry({ ...base, "bots/web/demo/transfers/t.json": t, "bots/web/demo/manifest.json": take });
+  const d4 = registry({ ...base, ...keepV, "bots/web/demo/transfers/t.json": t, "bots/web/demo/manifest.json": take });
   assert.deepEqual(await check(d4, fakeFetch, { baseDir: d3, author: "bob" }), []);
   const d5 = registry({ "creators/github-bob.json": base["creators/github-bob.json"] });
   assert.ok((await check(d5, fakeFetch, { baseDir, author: "bob" })).some((e) => e.includes("can't be deleted")));
