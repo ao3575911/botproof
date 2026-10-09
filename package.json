@@ -1,6 +1,6 @@
 {
   "name": "botproof",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Know who made the bot: signed, checkable creator identity for AI agents.",
   "type": "module",
   "bin": {

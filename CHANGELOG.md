@@ -4,6 +4,10 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-10
+
+MVP release: closes every failing case from the v0.2.0 review (adversarial suite: 0 todo).
+
 ### Added
 - `test/adversarial.test.ts`: the review's 39-check attack simulation, with mocked network. Open attacks are `todo` until fixed.
 - `publish --to-dir <dir>` writes the signed files into a local registry copy instead of opening a PR.
@@ -77,6 +81,7 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - Score with a visible breakdown: identity, ownership, reviews. Reviews are weighted by reviewer trust; self-reviews are rejected.
 - `registry check` and `registry build` for the registry's CI and Pages site.
 
-[Unreleased]: https://github.com/ao3575911/botproof/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ao3575911/botproof/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ao3575911/botproof/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ao3575911/botproof/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ao3575911/botproof/releases/tag/v0.1.0
