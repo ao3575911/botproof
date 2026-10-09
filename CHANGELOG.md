@@ -12,6 +12,8 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - Challenge codes are bound to the bot and the creator's key: `botproof-challenge:<platform>/<botId>:<keyId>:<nonce>`. A copied code no longer passes for another bot or key (review A2, N2).
 - `web` challenges must be on the creator's own gist or a DNS-proven domain. Only `grok` and `web` platforms are accepted.
 - `registry check` rejects a challenge nonce used by another bot or key.
+- First-come bot ownership: `registry check --base <ref> --author <login>` rejects a PR that changes another creator's bot, deletes signed files, or carries signatures from anyone but the PR author (review A3).
+- `transfer <platform>/<botId> --to github:<user> --to-key <key>`: the owner signs a hand-over before the new owner publishes.
 - Grok share pages: only the title and description tags are read.
 
 ### Fixed
