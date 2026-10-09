@@ -27,7 +27,8 @@ const HELP = `botproof ${VERSION}: signed identity for AI agents
                               (grok: put it in the bot description and update the share template)
   evidence <file.json>        attach a platform-signed request (Web Bot Auth)
   sign                        sign botproof.json with your key
-  publish                     open a PR to the registry with your signed files
+  publish [--to-dir d]        open a PR to the registry with your signed files
+                              (--to-dir: write them into a local registry copy instead)
   verify <platform>/<botId>   check a bot: signatures, live proofs, score
   attest <platform>/<botId> --tag <reviewed|audited|used-ok|flagged> [--note t]
                               sign a review of someone else's bot
@@ -54,7 +55,7 @@ async function main() {
     platform: { type: "string" }, bot: { type: "string" }, name: { type: "string" }, model: { type: "string" },
     "bot-version": { type: "string" }, "prompt-file": { type: "string" }, proof: { type: "string" },
     url: { type: "string" }, tag: { type: "string" }, note: { type: "string" }, reason: { type: "string" },
-    registry: { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
+    registry: { type: "string" }, "to-dir": { type: "string" }, json: { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
   } });
   if (o.version) return console.log(VERSION);
   if (!cmd || o.help) return console.log(HELP);
@@ -159,7 +160,25 @@ async function main() {
       break;
     }
     case "publish": {
-      const repo = o.registry || REGISTRY, c = creator();
+      const c = creator();
+      const stage = (dir: string) => {
+        wr(join(dir, "creators", slug(String(c.handle)) + ".json"), c);
+        if (existsSync(MANIFEST)) {
+          const m = rd(MANIFEST);
+          if (!m.sig) die("botproof.json is not signed; run botproof sign");
+          const base = join(dir, "bots", String(m.platform), String(m.botId));
+          wr(join(base, "manifest.json"), m);
+          wr(join(base, "versions", docHash(m) + ".json"), m);
+        }
+        if (existsSync(outbox())) cpSync(outbox(), dir, { recursive: true });
+      };
+      if (o["to-dir"]) {
+        stage(o["to-dir"]);
+        rmSync(outbox(), { recursive: true, force: true });
+        console.log(`staged into ${o["to-dir"]}`);
+        break;
+      }
+      const repo = o.registry || REGISTRY;
       const me = gh(["api", "user", "-q", ".login"]);
       const dir = mkdtempSync(join(tmpdir(), "botproof-"));
       try {
@@ -170,15 +189,7 @@ async function main() {
           git(["remote", "add", "fork", `https://github.com/${me}/${repo.split("/")[1]}.git`], dir);
           remote = "fork";
         }
-        wr(join(dir, "creators", slug(String(c.handle)) + ".json"), c);
-        if (existsSync(MANIFEST)) {
-          const m = rd(MANIFEST);
-          if (!m.sig) die("botproof.json is not signed; run botproof sign");
-          const base = join(dir, "bots", String(m.platform), String(m.botId));
-          wr(join(base, "manifest.json"), m);
-          wr(join(base, "versions", docHash(m) + ".json"), m);
-        }
-        if (existsSync(outbox())) cpSync(outbox(), dir, { recursive: true });
+        stage(dir);
         if (!git(["status", "--porcelain"], dir)) return console.log("nothing new to publish");
         const branch = `botproof/${slug(String(c.handle))}-${Date.now()}`;
         git(["checkout", "-q", "-b", branch], dir);

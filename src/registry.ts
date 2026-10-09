@@ -114,7 +114,8 @@ export function load(dir: string) {
 }
 
 /** Structural and live checks run on every registry PR. Returns a list of errors. */
-export async function check(dir: string, f: Fetch = fetch): Promise<string[]> {
+export type CheckOpts = { baseDir?: string; author?: string };
+export async function check(dir: string, f: Fetch = fetch, _opts: CheckOpts = {}): Promise<string[]> {
   const errs: string[] = [];
   const all = [...jsonFiles(join(dir, "creators")), ...jsonFiles(join(dir, "bots")), ...jsonFiles(join(dir, "revocations"))];
   const hashes = new Map<string, Doc>();

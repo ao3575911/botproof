@@ -4,6 +4,10 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- `test/adversarial.test.ts`: the review's 39-check attack simulation, with mocked network. Open attacks are `todo` until fixed.
+- `publish --to-dir <dir>` writes the signed files into a local registry copy instead of opening a PR.
+
 ### Fixed
 - `init --bot https://x.ai/bot/<id>` works without `--platform`, as the README shows.
 
