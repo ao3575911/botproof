@@ -1,0 +1,37 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, registry-url: "https://registry.npmjs.org" }
+      - run: npm ci && npm test
+      - name: Tag matches package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$TAG"
+      - name: Pack and checksum
+        run: |
+          npm pack
+          sha256sum botproof-*.tgz > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with: { subject-path: "botproof-*.tgz" }
+      - name: GitHub Release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          awk -v v="${TAG#v}" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
+          gh release create "$TAG" botproof-*.tgz SHA256SUMS --title "$TAG" --notes-file notes.md --verify-tag
+      - name: npm publish with provenance (only when NPM_TOKEN is set)
+        env: { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" }
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "::notice::NPM_TOKEN not set; skipping npm publish"; exit 0; fi
+          npm publish --provenance --access public

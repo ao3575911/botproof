@@ -8,6 +8,9 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - `test/adversarial.test.ts`: the review's 39-check attack simulation, with mocked network. Open attacks are `todo` until fixed.
 - `publish --to-dir <dir>` writes the signed files into a local registry copy instead of opening a PR.
 
+### Release
+- `release` workflow on `v*` tags: tests, `npm pack`, `SHA256SUMS`, build-provenance attestation, GitHub Release with assets, and `npm publish --provenance` when `NPM_TOKEN` is set. Tags are signed (SSH); the public key is in `.github/allowed_signers`. See RELEASING.md.
+
 ### Security
 - Challenge codes are bound to the bot and the creator's key: `botproof-challenge:<platform>/<botId>:<keyId>:<nonce>`. A copied code no longer passes for another bot or key (review A2, N2).
 - `web` challenges must be on the creator's own gist or a DNS-proven domain. Only `grok` and `web` platforms are accepted.
