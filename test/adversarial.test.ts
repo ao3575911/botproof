@@ -285,7 +285,7 @@ function selfIssued(path: string, authority: string, agent: string) {
   return { type: "web-bot-auth", request: { method: "GET", authority, path, headers: { "signature-agent": sa, "signature-input": rIn, signature: `r=:${sg(rIn, (n) => vals[n])}:` } } };
 }
 let n6: Doc;
-test("N6 self-issued platform signature is not platform-signed", { todo: true }, async () => {
+test("N6 self-issued platform signature is not platform-signed", async () => {
   const m = new Actor("mallory"); m.cwd = join(ROOT, "work", "mallory-n6"); mkdirSync(m.cwd, { recursive: true });
   m.run("init", "--platform", "web", "--bot", "openai-operator", "--name", "OpenAI Operator (official)");
   m.challenge(`https://gist.github.com/mallory/${gid("mop")}`, showOnGist(mallory, "mop"));
@@ -305,7 +305,7 @@ test("N7 tampered evidence is rejected", () => {
   ev.request.path += "/x"; writeFileSync(join(m.cwd, "ev.json"), JSON.stringify(ev));
   assert.equal(m.run("evidence", "ev.json").code, 1);
 });
-test("N8 evidence + copied challenge cannot take over a grok bot", { todo: true }, async () => {
+test("N8 evidence + copied challenge cannot take over a grok bot", async () => {
   const d = adv(); write(d, "creators/github-mallory.json", mc());
   const ev = selfIssued(`/botproof/${(grace.manifest.challenge as { nonce: string }).nonce}`, "mallory.example", "https://agent.mallory.example");
   write(d, "bots/grok/GrokBot123/manifest.json", mallory.craft({ v: 1, type: "bot", platform: "grok", botId: "GrokBot123", name: "Grace Helper", version: "9.9.9", seq: 99, challenge: grace.manifest.challenge, platformEvidence: ev, creator: "github:mallory", ts: new Date().toISOString() }));

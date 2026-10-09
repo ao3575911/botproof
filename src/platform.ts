@@ -3,8 +3,8 @@
  * web-bot-auth drafts). The platform (e.g. ChatGPT agent) signs the requests its agents make
  * and publishes its keys in a signed directory at /.well-known/http-message-signatures-directory.
  *
- * Evidence = one captured request from the bot to a URL containing the creator's challenge code.
- * It proves the creator runs an agent on that platform; it can't name a specific bot account.
+ * Evidence = one captured request from the bot to a URL containing the bot's bound challenge code.
+ * It only upgrades a claim whose own challenge already passed, and only for allowlisted platforms.
  */
 import { createHash, createPublicKey, verify } from "node:crypto";
 import type { Check } from "./proofs.js";
@@ -85,19 +85,33 @@ export async function fetchDirectory(origin: string, f: Fetch = fetch): Promise<
  * The request must be signed by a key from the platform's verified directory, cover
  * @authority and the path, and the path must contain the challenge code issued before signing.
  */
-export async function checkWebBotAuth(ev: WebBotAuthEvidence, nonce: string, issued: string | undefined, f: Fetch = fetch): Promise<Check> {
+/** Platforms whose Web Bot Auth directories count. The registry's platforms.json can extend this by PR. */
+export type Platform = { origin: string; name?: string };
+export const DEFAULT_PLATFORMS: Platform[] = [{ origin: "https://chatgpt.com", name: "ChatGPT agent" }];
+export type EvidenceContext = { code: string; issued?: string; platforms?: Platform[] };
+
+/**
+ * The request must be signed by a key from an allowlisted platform's verified directory, cover
+ * @authority and the path, the path must contain the bound challenge code, and it must be signed
+ * no earlier than the second the code was issued.
+ */
+export async function checkWebBotAuth(ev: WebBotAuthEvidence, ctx: EvidenceContext, f: Fetch = fetch): Promise<Check> {
   try {
     const { method, authority, path } = ev.request;
     const h = lower(ev.request.headers || {});
     const agent = h["signature-agent"]?.match(/https:\/\/[^"\s,]+/)?.[0];
     if (!agent) return { ok: false, detail: "no Signature-Agent" };
+    const origin = new URL(agent).origin;
+    if (!(ctx.platforms ?? DEFAULT_PLATFORMS).some((x) => x.origin === origin)) return { ok: false, detail: `${origin} is not an allowlisted platform` };
     const p = parseSignature(h["signature-input"] || "", h.signature || "", "web-bot-auth");
     const names = p.components.map((c) => c.name);
     if (!names.includes("@authority") || !(names.includes("@path") || names.includes("@target-uri")))
       return { ok: false, detail: "signature must cover @authority and the path" };
-    if (!path.includes(nonce)) return { ok: false, detail: "request path does not contain the bot code" };
-    if (issued && p.created && p.created < Date.parse(issued) / 1000) return { ok: false, detail: "signed before the code was issued" };
-    const dir = await fetchDirectory(new URL(agent).origin, f);
+    let decoded = path;
+    try { decoded = decodeURIComponent(path); } catch { /* keep raw */ }
+    if (!decoded.includes(ctx.code)) return { ok: false, detail: "request path does not contain the bound bot code" };
+    if (ctx.issued && p.created !== undefined && p.created < Math.floor(Date.parse(ctx.issued) / 1000)) return { ok: false, detail: "signed before the code was issued" };
+    const dir = await fetchDirectory(origin, f);
     if (!dir.ok) return dir;
     const values: Record<string, string> = {
       "@authority": authority, "@method": method.toUpperCase(), "@path": path.split("?")[0],
@@ -108,10 +122,10 @@ export async function checkWebBotAuth(ev: WebBotAuthEvidence, nonce: string, iss
   } catch (e) { return { ok: false, detail: String(e) }; }
 }
 
-export async function checkPlatformEvidence(ev: unknown, nonce: string | undefined, issued: string | undefined, f: Fetch = fetch): Promise<Check> {
+export async function checkPlatformEvidence(ev: unknown, ctx: EvidenceContext | undefined, f: Fetch = fetch): Promise<Check> {
   const e = ev as { type?: string } | undefined;
   if (!e) return { ok: false, detail: "no platform evidence" };
-  if (!nonce) return { ok: false, detail: "platform evidence needs a challenge code" };
-  if (e.type === "web-bot-auth") return checkWebBotAuth(e as WebBotAuthEvidence, nonce, issued, f);
+  if (!ctx?.code) return { ok: false, detail: "platform evidence needs a challenge code" };
+  if (e.type === "web-bot-auth") return checkWebBotAuth(e as WebBotAuthEvidence, ctx, f);
   return { ok: false, detail: `unsupported evidence type ${e.type}` };
 }
