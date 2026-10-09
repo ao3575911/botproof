@@ -1,0 +1,42 @@
+name: botproof verify
+description: Verify an AI bot's creator identity with botproof. Fails the job below a minimum proof strength.
+branding: { icon: check-circle, color: green }
+inputs:
+  bot:
+    description: "Bot to check, as <platform>/<botId> (e.g. grok/AbC123)"
+    required: true
+  min-strength:
+    description: "self-claimed | challenge-passed | platform-signed"
+    default: challenge-passed
+  registry:
+    description: "Registry API URL or a local registry directory (default: the public registry)"
+    default: ""
+  trust:
+    description: "Only count reviews from these handles (comma-separated)"
+    default: ""
+outputs:
+  strength: { description: "Proof strength", value: "${{ steps.v.outputs.strength }}" }
+  score: { description: "Score 0-100", value: "${{ steps.v.outputs.score }}" }
+  hash: { description: "Version hash of the verified manifest", value: "${{ steps.v.outputs.hash }}" }
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with: { node-version: 22 }
+    - shell: bash
+      run: npm ci --prefix "$GITHUB_ACTION_PATH" --no-audit --no-fund >/dev/null
+    - id: v
+      shell: bash
+      env:
+        BOT: ${{ inputs.bot }}
+        MIN: ${{ inputs.min-strength }}
+        REG: ${{ inputs.registry }}
+        TRUST: ${{ inputs.trust }}
+      run: |
+        args=(verify "$BOT" --json --min-strength "$MIN")
+        [ -n "$REG" ] && args+=(--registry "$REG")
+        [ -n "$TRUST" ] && args+=(--trust "$TRUST")
+        set +e; node "$GITHUB_ACTION_PATH/dist/src/cli.js" "${args[@]}" > "$RUNNER_TEMP/botproof.json"; code=$?; set -e
+        node -e 'const r=require(process.argv[1]);for(const k of ["strength","score"])console.log(k+"="+r[k]);console.log("hash="+r.versionHash)' "$RUNNER_TEMP/botproof.json" >> "$GITHUB_OUTPUT" || true
+        cat "$RUNNER_TEMP/botproof.json"
+        if [ $code -ne 0 ]; then echo "::error::botproof: $BOT is below $MIN (exit $code)"; exit $code; fi

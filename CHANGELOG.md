@@ -11,6 +11,10 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 ### Release
 - `release` workflow on `v*` tags: tests, `npm pack`, `SHA256SUMS`, build-provenance attestation, GitHub Release with assets, and `npm publish --provenance` when `NPM_TOKEN` is set. Tags are GPG-signed; the public key is in `.github/release-signing-key.asc`. See RELEASING.md.
 
+### For consumers
+- GitHub Action (`uses: ao3575911/botproof@v0.3.0`): inputs `bot`, `min-strength`, `registry`, `trust`; outputs `strength`, `score`, `hash`; fails the job below the threshold.
+- `verify --min-strength <s>` exits 3 below it. Exit codes are documented in `--help`.
+
 ### Trust
 - Reviews from GitHub accounts under 90 days old, or with no repos and no followers, count 0 (review A6). Creator GitHub links weigh by account age: 50 (1y+), 35 (90 days+), 15 (new or unknown).
 - `verify --trust <handles|file>` counts only reviews from your own list.

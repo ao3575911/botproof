@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "type": "creator",
+  "handle": "github:botproof-fixture",
+  "links": [
+    {
+      "type": "github",
+      "user": "botproof-fixture",
+      "proof": "https://gist.github.com/botproof-fixture/0"
+    }
+  ],
+  "ts": "2026-10-09T00:00:00.000Z",
+  "key": "ed25519:Ndx8vgu9UZY9V7fcGDiVkLxbuY_qaz7uABYW8Rd_kas",
+  "sig": "T_cLF6PgFSCKWAs1cw8pHvdhK8_dALIsctnWrioWbWemao71YdD-IvXXblp_9jJcEBVL17NIu8E1h01s9OqABA"
+}
