@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { Doc, ID_RE, docHash, slug, verifyDoc } from "./core.js";
-import { checkChallenge, checkDns, checkGithub, checkPlatformSignature } from "./proofs.js";
+import { GROK_SHARE, checkChallenge, checkDns, checkGithub, checkPlatformSignature } from "./proofs.js";
 
 type Fetch = typeof fetch;
 export type Strength = "self-claimed" | "challenge-passed" | "platform-signed" | "revoked";
@@ -45,12 +45,20 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
     if (t && verifyDoc(r) && r.key === t.key) revoked.add(r.target as string);
   }
   const ct = await creatorTrust(errors.length ? undefined : b.creator, f);
-  let strength: Strength = "self-claimed";
+  let strength: Strength = "self-claimed", ownershipDetail = "no challenge";
   const ch = m.challenge as { nonce: string; url: string } | undefined;
+  const boundUrl = m.platform !== "grok" || (ch?.url.match(GROK_SHARE)?.[1] === m.botId);
   if (errors.length) strength = "self-claimed";
   else if (revoked.has(docHash(m))) strength = "revoked";
   else if ((await checkPlatformSignature(m.platformEvidence)).ok) strength = "platform-signed";
-  else if (ch?.nonce && ch.url && (await checkChallenge(ch.url, ch.nonce, f)).ok) strength = "challenge-passed";
+  else if (ch?.nonce && ch.url) {
+    if (!boundUrl) ownershipDetail = `grok challenge must be on https://x.ai/bot/${m.botId}`;
+    else {
+      const r = await checkChallenge(ch.url, ch.nonce, f);
+      ownershipDetail = r.detail;
+      if (r.ok) strength = "challenge-passed";
+    }
+  }
   const attestations = [];
   let reviews = 0;
   for (const a of b.attestations) {
@@ -72,7 +80,7 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
   const score = strength === "revoked" || errors.length ? 0 : clamp(breakdown.identity + breakdown.ownership + breakdown.reviews, 0, 100);
   return {
     platform: m.platform, botId: m.botId, name: m.name, version: m.version, versionHash: docHash(m),
-    creator: m.creator, creatorTrust: ct.trust, links: ct.links, strength, score, breakdown, attestations, errors,
+    creator: m.creator, creatorTrust: ct.trust, links: ct.links, strength, ownershipDetail, score, breakdown, attestations, errors,
     checkedAt: new Date().toISOString(),
   };
 }

@@ -16,13 +16,14 @@ const MANIFEST = "botproof.json";
 
 const HELP = `botproof ${VERSION}: signed identity for AI agents
 
-  init --platform <p> --bot <id> [--name n] [--model m] [--bot-version v] [--prompt-file f]
+  init --platform <p> --bot <id|x.ai/bot link> [--name n] [--model m] [--bot-version v] [--prompt-file f]
                               start a bot manifest (botproof.json) and your key
   link github <user> [--proof <gist-url>|readme]
                               prove your GitHub account (prints the proof text first)
   link x <post-url>           record your X account (self-claimed in v0)
   link dns <domain>           prove a domain with a TXT record
-  challenge --url <bot-page>  get a one-time code to show on the bot's public page
+  challenge [--url <bot-page>] get a one-time code to show on the bot's public page
+                              (grok: put it in the bot description and update the share template)
   sign                        sign botproof.json with your key
   publish                     open a PR to the registry with your signed files
   verify <platform>/<botId>   check a bot: signatures, live proofs, score
@@ -61,6 +62,8 @@ async function main() {
   switch (cmd) {
     case "init": {
       if (!o.platform || !o.bot) die("init needs --platform and --bot");
+      const share = o.bot!.match(/^https:\/\/x\.ai\/bot\/([A-Za-z0-9_-]+)/);
+      if (share) { o.platform = "grok"; o.bot = share[1]; }
       if (!ID_RE.test(o.platform!) || !ID_RE.test(o.bot!)) die("platform and bot id may use letters, digits, . _ -");
       const k = key();
       const m: Doc = { v: 1, type: "bot", platform: o.platform, botId: o.bot, name: o.name || o.bot, model: o.model,
@@ -101,8 +104,9 @@ async function main() {
       break;
     }
     case "challenge": {
-      if (!o.url) die("challenge needs --url <public page of the bot>");
       const m = rd(MANIFEST);
+      if (!o.url && m.platform === "grok") o.url = `https://x.ai/bot/${m.botId}`;
+      if (!o.url) die("challenge needs --url <public page of the bot>");
       const nonce = randomBytes(9).toString("hex");
       wr(MANIFEST, { ...m, challenge: { nonce, url: o.url, issued: now() }, sig: undefined, key: undefined });
       console.log(`Show this on ${o.url} (bot description, bio or a reply), then run botproof sign:\n\n${challengeText(nonce)}`);
@@ -186,7 +190,7 @@ async function main() {
       console.log(`${res.name} (${platform}/${botId}) v${res.version}`);
       console.log(`${ok(!res.errors.length)} signatures${res.errors.length ? ": " + res.errors.join("; ") : ""}`);
       for (const l of res.links) console.log(`${ok(l.status === "verified")} ${l.type} ${l.subject}: ${l.status}`);
-      console.log(`  ownership: ${res.strength}`);
+      console.log(`  ownership: ${res.strength} (${res.ownershipDetail})`);
       for (const a of res.attestations) console.log(`  ${a.tag} by ${a.attester}: ${a.status}${a.weight ? ` (${a.weight > 0 ? "+" : ""}${a.weight})` : ""}`);
       console.log(`score ${res.score} = identity ${res.breakdown.identity} + ownership ${res.breakdown.ownership} + reviews ${res.breakdown.reviews}`);
       console.log(`hash ${res.versionHash}`);
