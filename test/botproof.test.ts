@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { sign } from "node:crypto";
 import { checkWebBotAuth, parseSignature, signatureBase, thumbprint, verifyDirectory } from "../src/platform.js";
 import { challengeText, checkChallenge, checkGithub, checkX, grokPageText, proofText } from "../src/proofs.js";
-import { badge, build, check, evaluate, load } from "../src/registry.js";
+import { badge, badgeLabel, build, check, evaluate, load } from "../src/registry.js";
 
 const kp = () => generateKeyPairSync("ed25519").privateKey;
 const alice = kp(), bob = kp();
@@ -96,7 +96,10 @@ test("only the signer can revoke", async () => {
   assert.equal(r.score, 0);
 });
 
-test("badge is SVG", () => assert.match(badge("challenge-passed", 50), /<svg.*challenge-passed · 50/));
+test("badge shows the label, not the score", () => {
+  assert.match(badge("challenge-passed"), /<svg.*✓ challenge-passed/);
+  assert.match(badge("self-claimed", badgeLabel("self-claimed", true)), /✓ verified creator/);
+});
 
 // Real x.ai/bot share page (fixture), with the challenge code added to the bot description.
 const grokHtml = readFileSync(new URL("../../test/fixtures/grok-share.html", import.meta.url), "utf8");
