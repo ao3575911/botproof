@@ -10,7 +10,7 @@ botproof verify grok/<id> --git                 # from a registry clone, not the
 GitHub Action:
 
 ```yaml
-- uses: ao3575911/botproof@v0.3.1
+- uses: ao3575911/botproof@v0.3.2
   id: bot
   with:
     bot: grok/<id>
