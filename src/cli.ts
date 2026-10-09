@@ -10,7 +10,7 @@ import { X_POST, challengeText, checkDns, checkGithub, checkX, proofText } from 
 import { build, check, evaluate } from "./registry.js";
 import { checkPlatformEvidence } from "./platform.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 const REGISTRY = process.env.BOTPROOF_REGISTRY || "ao3575911/botproof-registry";
 const API = process.env.BOTPROOF_API || "https://ao3575911.github.io/botproof-registry";
 const MANIFEST = "botproof.json";
