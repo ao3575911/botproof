@@ -43,15 +43,32 @@ export async function checkDns(domain: string, key: string): Promise<Check> {
   } catch (e) { return { ok: false, detail: String(e) }; }
 }
 
+export const GROK_SHARE = /^https:\/\/x\.ai\/bot\/([A-Za-z0-9_-]{6,64})\/?$/;
+
+const unescapeHtml = (s: string) => s.replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d)).replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+/** Creator-editable text on a Grok Bot share page (x.ai/bot/<id>): name, description and visible text. */
+export function grokPageText(html: string): string {
+  const meta = [...html.matchAll(/<meta[^>]+(?:name="description"|property="og:(?:title|description)")[^>]+content="([^"]*)"/g)].map((m) => m[1]);
+  const title = html.match(/<title>([^<]*)<\/title>/)?.[1] || "";
+  const visible = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ");
+  return unescapeHtml([title, ...meta, visible].join("\n"));
+}
+
 /** Bot challenge: the bot's public page shows the one-time code. */
 export async function checkChallenge(url: string, nonce: string, f: Fetch = fetch): Promise<Check> {
   try {
     const gist = url.match(/^https:\/\/gist\.github\.com\/(?:[\w-]+\/)?([0-9a-f]+)\/?$/i);
+    const grok = GROK_SHARE.test(url);
     const target = gist ? `https://api.github.com/gists/${gist[1]}` : url;
     const r = await f(target, { headers: gist ? ghHeaders(false, false) : { "user-agent": "botproof" } });
     if (!r.ok) return { ok: false, detail: `fetch ${r.status}` };
-    const body = (await r.text()).slice(0, 2_000_000);
-    return body.includes(challengeText(nonce)) ? { ok: true, detail: "challenge code found" } : { ok: false, detail: "challenge code not found" };
+    let body = (await r.text()).slice(0, 2_000_000);
+    if (grok) body = grokPageText(body);
+    return body.includes(challengeText(nonce))
+      ? { ok: true, detail: grok ? "code found on Grok share page" : "challenge code found" }
+      : { ok: false, detail: "challenge code not found" };
   } catch (e) { return { ok: false, detail: String(e) }; }
 }
 

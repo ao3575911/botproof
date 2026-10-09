@@ -5,7 +5,8 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Doc, canonical, docHash, keyId, signDoc, verifyDoc } from "../src/core.js";
-import { challengeText, checkGithub, proofText } from "../src/proofs.js";
+import { readFileSync } from "node:fs";
+import { challengeText, checkChallenge, checkGithub, grokPageText, proofText } from "../src/proofs.js";
 import { badge, build, check, evaluate, load } from "../src/registry.js";
 
 const kp = () => generateKeyPairSync("ed25519").privateKey;
@@ -78,3 +79,21 @@ test("only the signer can revoke", async () => {
 });
 
 test("badge is SVG", () => assert.match(badge("challenge-passed", 50), /<svg.*challenge-passed · 50/));
+
+// Real x.ai/bot share page (fixture), with the challenge code added to the bot description.
+const grokHtml = readFileSync(new URL("../../test/fixtures/grok-share.html", import.meta.url), "utf8");
+test("grok share page: reads the description and finds the code", async () => {
+  assert.match(grokPageText(grokHtml), /On-demand iCloud Mail helper/);
+  const withCode = grokHtml.replaceAll("Does nothing until you ask.", "Does nothing until you ask. " + challengeText("abc123"));
+  const f = (async () => new Response(withCode)) as unknown as typeof fetch;
+  assert.ok((await checkChallenge("https://x.ai/bot/0fF7Cqp8LTzh9JGQ-je3M", "abc123", f)).ok);
+  assert.equal((await checkChallenge("https://x.ai/bot/0fF7Cqp8LTzh9JGQ-je3M", "zzz", f)).ok, false);
+});
+
+test("grok claims only count a code on that bot's own share page", async () => {
+  const m = (url: string) => signDoc({ v: 1, type: "bot", platform: "grok", botId: "0fF7Cqp8LTzh9JGQ-je3M", name: "x", version: "1", creator: "github:alice", challenge: { nonce: "n0nce", url }, ts: "t" }, alice);
+  const ok = (async (u: string) => String(u).includes("gists") ? fakeFetch(u) : new Response(`<meta name="description" content="${challengeText("n0nce")}"/>`)) as typeof fetch;
+  const b = (url: string) => ({ manifest: m(url), creator: base["creators/github-alice.json"], attestations: [], attesters: {}, revocations: [] });
+  assert.equal((await evaluate(b("https://x.ai/bot/0fF7Cqp8LTzh9JGQ-je3M"), ok)).strength, "challenge-passed");
+  assert.equal((await evaluate(b("https://bot.example/page"), ok)).strength, "self-claimed");
+});
