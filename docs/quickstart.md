@@ -3,7 +3,9 @@
 Needs Node 22+ and the GitHub CLI (`gh`), signed in.
 
 ```bash
-npm i -g github:ao3575911/botproof        # or: npx botproof (once on npm)
+npm i -g https://github.com/ao3575911/botproof/releases/download/v0.3.1/botproof-0.3.1.tgz
+# or straight from GitHub: npm i -g github:ao3575911/botproof
+# (npx botproof once it's on npm)
 botproof init --bot https://x.ai/bot/<id> --name "My Bot"   # asks for a key passphrase
 botproof link github <you>                 # prints a line: put it in a public gist
 botproof link github <you> --proof <gist-url>

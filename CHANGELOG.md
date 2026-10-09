@@ -4,6 +4,10 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+- `npm i -g github:ao3575911/botproof` failed with `tsc: not found`, because npm does not install devDependencies when it prepares a git dependency for a global install. Built `dist/src` is now committed, the `prepare` script is gone, and CI fails if `dist/src` is stale. The README installs the release tarball first, with the GitHub install as the fallback.
+- New CI job `github-install` runs that exact command, then `botproof --version`.
+
 ## [0.3.1] - 2026-10-10
 
 ### Fixed
