@@ -2,11 +2,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join, relative } from "node:path";
 import { Doc, ID_RE, docHash, slug, verifyDoc, verifyRotation } from "./core.js";
 import { GIST_URL, GROK_SHARE, NONCE_RE, challengeText, checkChallenge, checkX, checkDns, checkGithub } from "./proofs.js";
-import { checkPlatformEvidence } from "./platform.js";
+import { Platform, checkPlatformEvidence } from "./platform.js";
 
 type Fetch = typeof fetch;
 export type Strength = "self-claimed" | "challenge-passed" | "platform-signed" | "revoked";
-export type Bundle = { manifest: Doc; creator?: Doc; attestations: Doc[]; attesters: Record<string, Doc>; revocations: Doc[]; versions?: Doc[]; keyRevocations?: Doc[] };
+export type Bundle = { manifest: Doc; creator?: Doc; attestations: Doc[]; attesters: Record<string, Doc>; revocations: Doc[]; versions?: Doc[]; keyRevocations?: Doc[]; platforms?: Platform[] };
 
 /** Valid key revocations: signed by the revoked key itself. Returns key → since (ms). */
 export function revokedKeys(docs: Doc[] = []): Map<string, number> {
@@ -84,19 +84,23 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
   let strength: Strength = "self-claimed", ownershipDetail = "no challenge";
   const ch = m.challenge as { nonce: string; url: string; issued?: string } | undefined;
   const urlErr = ch ? challengeUrlError(m, ch.url, ct.links) : undefined;
-  const pe = !errors.length && m.platformEvidence ? await checkPlatformEvidence(m.platformEvidence, ch?.nonce, ch?.issued, f) : undefined;
+  const code = ch?.nonce ? challengeText(String(m.platform), String(m.botId), String(m.key), ch.nonce) : "";
   if (errors.length) ownershipDetail = "invalid claim";
   else if (revoked.has(docHash(m))) { strength = "revoked"; ownershipDetail = "withdrawn by the creator"; }
-  else if (pe?.ok) { strength = "platform-signed"; ownershipDetail = pe.detail; }
   else if (ch?.nonce && ch.url) {
     if (urlErr) ownershipDetail = urlErr;
     else {
-      const r = await checkChallenge(ch.url, challengeText(String(m.platform), String(m.botId), String(m.key), ch.nonce), f, githubUser(m.creator));
+      const r = await checkChallenge(ch.url, code, f, githubUser(m.creator));
       ownershipDetail = r.detail;
       if (r.ok) strength = "challenge-passed";
     }
   }
-  if (pe && !pe.ok && strength !== "revoked") ownershipDetail += `; platform evidence: ${pe.detail}`;
+  // Platform evidence only upgrades a claim whose own challenge passed; it never replaces it.
+  if (strength === "challenge-passed" && m.platformEvidence) {
+    const pe = await checkPlatformEvidence(m.platformEvidence, { code, issued: ch?.issued, platforms: b.platforms }, f);
+    if (pe.ok) { strength = "platform-signed"; ownershipDetail = pe.detail; }
+    else ownershipDetail += `; platform evidence: ${pe.detail}`;
+  }
   const attestations = [];
   let reviews = 0;
   for (const a of b.attestations) {
@@ -135,6 +139,8 @@ export function load(dir: string) {
   const revocations = jsonFiles(join(dir, "revocations")).map(readJson);
   const keyDocs = jsonFiles(join(dir, "keys")).map(readJson);
   const keyRevocations = keyDocs.filter((d) => d.type === "key-revocation");
+  let platforms: Platform[] | undefined;
+  if (existsSync(join(dir, "platforms.json"))) platforms = (JSON.parse(readFileSync(join(dir, "platforms.json"), "utf8"))["web-bot-auth"] || []) as Platform[];
   const bots: { path: string; bundle: Bundle }[] = [];
   const root = join(dir, "bots");
   const dirs = (d: string) => readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
@@ -143,7 +149,7 @@ export function load(dir: string) {
     if (!existsSync(mp)) continue;
     const manifest = readJson(mp);
     bots.push({ path: base, bundle: {
-      manifest, creator: creators[manifest.creator as string], revocations, attesters: creators, keyRevocations,
+      manifest, creator: creators[manifest.creator as string], revocations, attesters: creators, keyRevocations, platforms,
       attestations: jsonFiles(join(base, "attestations")).map(readJson),
       versions: jsonFiles(join(base, "versions")).map(readJson),
     } });

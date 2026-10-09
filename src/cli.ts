@@ -72,7 +72,9 @@ async function fetchBundle(platform: string, botId: string, registry?: string): 
   }
   const r = await fetch(`${registry || API}/api/bots/${platform}/${botId}.json`);
   if (!r.ok) die(`not found in registry (${r.status})`);
-  return ((await r.json()) as { docs: Bundle }).docs;
+  const docs = ((await r.json()) as { docs: Bundle }).docs;
+  delete docs.platforms; // the allowlist is never taken from a mirror; use --registry <dir> for the registry's own list
+  return docs;
 }
 
 async function main() {
@@ -157,7 +159,9 @@ async function main() {
       if (!args[0]) die("usage: evidence <file.json> (a captured Web Bot Auth request, see README)");
       const m = rd(MANIFEST), ev = rd(args[0]);
       const ch = m.challenge as { nonce?: string; issued?: string } | undefined;
-      const r = await checkPlatformEvidence(ev, ch?.nonce, ch?.issued);
+      const k = await key();
+      const code = ch?.nonce ? challengeText(String(m.platform), String(m.botId), k.id, ch.nonce) : "";
+      const r = await checkPlatformEvidence(ev, { code, issued: ch?.issued });
       if (!r.ok) die(r.detail);
       wr(MANIFEST, { ...m, platformEvidence: ev, sig: undefined, key: undefined });
       console.log(`platform evidence ok: ${r.detail}; run botproof sign`);

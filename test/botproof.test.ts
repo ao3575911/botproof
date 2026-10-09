@@ -130,15 +130,18 @@ test("web bot auth: signed request with the code makes a claim platform-signed",
   const dIn = `d=("@authority";req);created=${now};keyid="${kid}";alg="ed25519";tag="http-message-signatures-directory"`;
   const dirHeaders = { "signature-input": dIn, signature: `d=:${sigOver(dIn, () => "agent.example")}:` };
   const rIn = `r=("@authority" "@path" "signature-agent");created=${now};keyid="${kid}";alg="ed25519";tag="web-bot-auth"`;
-  const vals: Record<string, string> = { "@authority": "alice.example", "@path": `/botproof/${N}`, "signature-agent": '"https://agent.example"' };
-  const ev = { type: "web-bot-auth" as const, request: { method: "GET", authority: "alice.example", path: `/botproof/${N}`,
+  const code = challengeText("web", "demo", id(alice), N), path = `/botproof/${encodeURIComponent(code)}`;
+  const vals: Record<string, string> = { "@authority": "alice.example", "@path": path, "signature-agent": '"https://agent.example"' };
+  const ev = { type: "web-bot-auth" as const, request: { method: "GET", authority: "alice.example", path,
     headers: { "signature-agent": vals["signature-agent"], "signature-input": rIn, signature: `r=:${sigOver(rIn, (n) => vals[n])}:` } } };
   const f = (async (u: string) => String(u).startsWith("https://agent.example/") ? new Response(body, { headers: dirHeaders }) : fakeFetch(u)) as typeof fetch;
-  assert.ok((await checkWebBotAuth(ev, N, undefined, f)).ok);
-  assert.equal((await checkWebBotAuth(ev, "other", undefined, f)).ok, false);
-  assert.equal((await checkWebBotAuth({ ...ev, request: { ...ev.request, authority: "bob.example" } }, N, undefined, f)).ok, false);
+  const platforms = [{ origin: "https://agent.example" }], ctx = { code, platforms };
+  assert.ok((await checkWebBotAuth(ev, ctx, f)).ok);
+  assert.match((await checkWebBotAuth(ev, { code }, f)).detail, /not an allowlisted platform/);
+  assert.equal((await checkWebBotAuth(ev, { ...ctx, code: code.replace(N, "f".repeat(18)) }, f)).ok, false);
+  assert.equal((await checkWebBotAuth({ ...ev, request: { ...ev.request, authority: "bob.example" } }, ctx, f)).ok, false);
   const m2 = signDoc({ ...manifest, sig: undefined, platformEvidence: ev }, alice);
-  const r = await evaluate({ manifest: m2, creator: base["creators/github-alice.json"], attestations: [], attesters: {}, revocations: [] }, f);
+  const r = await evaluate({ manifest: m2, creator: base["creators/github-alice.json"], attestations: [], attesters: {}, revocations: [], platforms }, f);
   assert.equal(r.strength, "platform-signed");
   assert.equal(r.score, 20 + 35);
 });
