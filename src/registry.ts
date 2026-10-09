@@ -1,12 +1,23 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { Doc, ID_RE, docHash, slug, verifyDoc } from "./core.js";
+import { Doc, ID_RE, docHash, slug, verifyDoc, verifyRotation } from "./core.js";
 import { GIST_URL, GROK_SHARE, NONCE_RE, challengeText, checkChallenge, checkX, checkDns, checkGithub } from "./proofs.js";
 import { checkPlatformEvidence } from "./platform.js";
 
 type Fetch = typeof fetch;
 export type Strength = "self-claimed" | "challenge-passed" | "platform-signed" | "revoked";
-export type Bundle = { manifest: Doc; creator?: Doc; attestations: Doc[]; attesters: Record<string, Doc>; revocations: Doc[]; versions?: Doc[] };
+export type Bundle = { manifest: Doc; creator?: Doc; attestations: Doc[]; attesters: Record<string, Doc>; revocations: Doc[]; versions?: Doc[]; keyRevocations?: Doc[] };
+
+/** Valid key revocations: signed by the revoked key itself. Returns key → since (ms). */
+export function revokedKeys(docs: Doc[] = []): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const d of docs) if (d.type === "key-revocation" && verifyDoc(d) && d.key === d.revokedKey) {
+    const since = Date.parse(String(d.since));
+    if (!Number.isNaN(since)) out.set(String(d.key), Math.min(since, out.get(String(d.key)) ?? Infinity));
+  }
+  return out;
+}
+const revokedAt = (rk: Map<string, number>, d: Doc) => rk.has(String(d.key)) && !(Date.parse(String(d.ts)) < rk.get(String(d.key))!);
 type Link = { type: string; user?: string; proof?: string; url?: string; domain?: string };
 
 const W = { github: 50, dns: 35, x: 20, xClaimed: 5 } as Record<string, number>;
@@ -57,6 +68,9 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
   if (!verifyDoc(m)) errors.push("manifest signature invalid");
   if (!b.creator) errors.push("creator not found");
   else if (b.creator.handle !== m.creator || b.creator.key !== m.key) errors.push("manifest not signed by creator's key");
+  const rk = revokedKeys(b.keyRevocations);
+  if (rk.has(String(m.key))) errors.push("manifest signed by a revoked key");
+  if (b.creator && rk.has(String(b.creator.key))) errors.push("creator profile signed by a revoked key");
   const newer = (b.versions || []).find((v) => verifyDoc(v) && v.creator === m.creator && v.platform === m.platform && v.botId === m.botId && Number(v.seq) > Number(m.seq));
   if (newer) errors.push(`rolled back: a newer signed version exists (seq ${newer.seq})`);
   if (!Number.isSafeInteger(m.seq) || Number(m.seq) < 1) errors.push("manifest needs a positive integer seq");
@@ -64,7 +78,7 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
   const revoked = new Set<string>();
   for (const r of b.revocations) {
     const t = docs.find((d) => docHash(d) === r.target);
-    if (t && verifyDoc(r) && r.key === t.key) revoked.add(r.target as string);
+    if (t && verifyDoc(r) && r.key === t.key && !revokedAt(rk, r)) revoked.add(r.target as string);
   }
   const ct = await creatorTrust(errors.length ? undefined : b.creator, f);
   let strength: Strength = "self-claimed", ownershipDetail = "no challenge";
@@ -90,6 +104,7 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
     const who = b.attesters[a.attester as string];
     if (!verifyDoc(a)) status = "bad signature";
     else if (revoked.has(docHash(a))) status = "revoked";
+    else if (revokedAt(rk, a)) status = "key revoked";
     else if (a.platform !== m.platform || a.botId !== m.botId) status = "wrong bot";
     else if (a.versionHash !== docHash(m)) status = "earlier version";
     else if (a.attester === m.creator || a.key === m.key) status = "self-review rejected";
@@ -118,6 +133,8 @@ export function load(dir: string) {
   const creators: Record<string, Doc> = {};
   for (const p of jsonFiles(join(dir, "creators"))) { const c = readJson(p); creators[c.handle as string] = c; }
   const revocations = jsonFiles(join(dir, "revocations")).map(readJson);
+  const keyDocs = jsonFiles(join(dir, "keys")).map(readJson);
+  const keyRevocations = keyDocs.filter((d) => d.type === "key-revocation");
   const bots: { path: string; bundle: Bundle }[] = [];
   const root = join(dir, "bots");
   const dirs = (d: string) => readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
@@ -126,12 +143,12 @@ export function load(dir: string) {
     if (!existsSync(mp)) continue;
     const manifest = readJson(mp);
     bots.push({ path: base, bundle: {
-      manifest, creator: creators[manifest.creator as string], revocations, attesters: creators,
+      manifest, creator: creators[manifest.creator as string], revocations, attesters: creators, keyRevocations,
       attestations: jsonFiles(join(base, "attestations")).map(readJson),
       versions: jsonFiles(join(base, "versions")).map(readJson),
     } });
   }
-  return { creators, revocations, bots };
+  return { creators, revocations, bots, keyDocs, keyRevocations };
 }
 
 /** Structural and live checks run on every registry PR. Returns a list of errors. */
@@ -160,8 +177,12 @@ function checkChange(dir: string, baseDir: string, author: string | undefined, e
   for (const c of [...Object.values(bc), ...Object.values(hc)]) if (c.key) keyOwner.set(c.key, String(c.handle));
   for (const [rel, d] of base) if (d && !head.has(rel)) errs.push(`${rel}: signed files can't be deleted`);
   const touched = [...head].filter(([rel, d]) => !d || !base.get(rel) || docHash(d) !== docHash(base.get(rel)!));
+  const rk = revokedKeys([...head.values()].filter((d): d is Doc => !!d));
   for (const [rel, d] of touched) {
     if (!d) continue;
+    if (d.type !== "key-revocation" && rk.has(String(d.key))) errs.push(`${rel}: signed by a revoked key`);
+    if (d.type === "key-revocation" && d.key !== d.revokedKey) errs.push(`${rel}: a key can only be revoked by itself`);
+    if (d.type === "key-rotation" && !verifyRotation(d)) errs.push(`${rel}: rotation needs signatures from both keys`);
     if (rel.endsWith("/manifest.json") && base.get(rel)) {
       const old = base.get(rel)!;
       if (!(Number(d.seq) > Number(old.seq))) errs.push(`${rel}: seq must increase (was ${old.seq}, now ${d.seq}); rollback rejected`);
@@ -174,7 +195,7 @@ function checkChange(dir: string, baseDir: string, author: string | undefined, e
         errs.push(`${rel}: owned by ${old.creator} with another key`);
     }
     if (author) {
-      const signer = d.type === "creator" ? String(d.handle) : keyOwner.get(String(d.key));
+      const signer = d.type === "creator" || d.type === "key-rotation" ? String(d.handle) : keyOwner.get(String(d.key));
       if (!signer) errs.push(`${rel}: signed by a key no registered creator holds`);
       else if (signer.toLowerCase() !== `github:${author.toLowerCase()}`) errs.push(`${rel}: signed by ${signer}, but the PR author is @${author}`);
     }

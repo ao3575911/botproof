@@ -15,6 +15,8 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - First-come bot ownership: `registry check --base <ref> --author <login>` rejects a PR that changes another creator's bot, deletes signed files, or carries signatures from anyone but the PR author (review A3).
 - Anti-rollback: manifests carry a monotonic `seq` (set by `sign`). CI requires it to increase, and `verify` rejects a manifest older than any signed version in `versions/` (review A7).
 - Reviews carry the `versionHash` they reviewed. Reviews of earlier versions are shown but not counted, so a takeover can't inherit them (review A3).
+- Key lifecycle: `revoke --key [--since]` voids everything the key signs from then on, and CI rejects new signatures from a revoked key (review A8). `rotate` moves to a new key with a rotation doc signed by both keys, and your bots stay yours. `key` shows your key; `key export` prints it for backup.
+- Keys are stored encrypted by default (PKCS#8, AES-256-CBC, mode 0600). The passphrase is prompted, or read from `BOTPROOF_PASSPHRASE`. Existing plaintext keys still load.
 - `transfer <platform>/<botId> --to github:<user> --to-key <key>`: the owner signs a hand-over before the new owner publishes.
 - Grok share pages: only the title and description tags are read.
 
