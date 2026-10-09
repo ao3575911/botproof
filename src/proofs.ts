@@ -6,9 +6,10 @@ type Fetch = typeof fetch;
 export const proofText = (kind: string, subject: string, key: string) => `botproof-proof:${kind}:${subject}:${key}`;
 export const challengeText = (nonce: string) => `botproof-challenge:${nonce}`;
 
-function ghHeaders(raw = false): Record<string, string> {
+// Gists are fetched without a token: Actions tokens get 403 on the gists API.
+function ghHeaders(raw = false, auth = !!process.env.GITHUB_TOKEN): Record<string, string> {
   const h: Record<string, string> = { "user-agent": "botproof", accept: raw ? "application/vnd.github.raw" : "application/vnd.github+json" };
-  if (process.env.GITHUB_TOKEN) h.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  if (auth) h.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
   return h;
 }
 
@@ -18,7 +19,7 @@ export async function checkGithub(user: string, proof: string, key: string, f: F
   try {
     const gist = proof.match(/^https:\/\/gist\.github\.com\/(?:[\w-]+\/)?([0-9a-f]+)\/?$/i);
     if (gist) {
-      const r = await f(`https://api.github.com/gists/${gist[1]}`, { headers: ghHeaders() });
+      const r = await f(`https://api.github.com/gists/${gist[1]}`, { headers: ghHeaders(false, false) });
       if (!r.ok) return { ok: false, detail: `gist fetch ${r.status}` };
       const g = (await r.json()) as { owner?: { login?: string }; files?: Record<string, { content?: string }> };
       if (g.owner?.login?.toLowerCase() !== user.toLowerCase()) return { ok: false, detail: "gist not owned by " + user };
@@ -47,7 +48,7 @@ export async function checkChallenge(url: string, nonce: string, f: Fetch = fetc
   try {
     const gist = url.match(/^https:\/\/gist\.github\.com\/(?:[\w-]+\/)?([0-9a-f]+)\/?$/i);
     const target = gist ? `https://api.github.com/gists/${gist[1]}` : url;
-    const r = await f(target, { headers: gist ? ghHeaders() : { "user-agent": "botproof" } });
+    const r = await f(target, { headers: gist ? ghHeaders(false, false) : { "user-agent": "botproof" } });
     if (!r.ok) return { ok: false, detail: `fetch ${r.status}` };
     const body = (await r.text()).slice(0, 2_000_000);
     return body.includes(challengeText(nonce)) ? { ok: true, detail: "challenge code found" } : { ok: false, detail: "challenge code not found" };
