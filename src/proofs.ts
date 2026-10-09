@@ -3,6 +3,21 @@ import { resolveTxt } from "node:dns/promises";
 export type Check = { ok: boolean; detail: string };
 type Fetch = typeof fetch;
 
+export const FETCH_TIMEOUT_MS = 10_000, FETCH_MAX_BYTES = 2_000_000;
+/** All network reads: https only, 10s timeout, bodies capped at 2 MB. */
+export async function safeGet(f: Fetch, url: string, init: RequestInit = {}): Promise<Response> {
+  if (!url.startsWith("https://")) throw new Error("only https URLs are fetched");
+  const r = await f(url, { ...init, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  const chunks: Uint8Array[] = [];
+  let n = 0;
+  if (r.body) for await (const c of r.body as unknown as AsyncIterable<Uint8Array>) {
+    n += c.length;
+    if (n > FETCH_MAX_BYTES) throw new Error("response too large");
+    chunks.push(c);
+  }
+  return new Response(r.status === 204 ? null : Buffer.concat(chunks), { status: r.status, headers: r.headers });
+}
+
 export const proofText = (kind: string, subject: string, key: string) => `botproof-proof:${kind}:${subject}:${key}`;
 /** The code a creator shows on the bot's page. Bound to the bot and the creator's key, so it can't be reused. */
 export const challengeText = (platform: string, botId: string, key: string, nonce: string) => `botproof-challenge:${platform}/${botId}:${key}:${nonce}`;
@@ -22,7 +37,7 @@ export async function checkGithub(user: string, proof: string, key: string, f: F
   try {
     const gist = proof.match(/^https:\/\/gist\.github\.com\/(?:[\w-]+\/)?([0-9a-f]+)\/?$/i);
     if (gist) {
-      const r = await f(`https://api.github.com/gists/${gist[1]}`, { headers: ghHeaders(false, false) });
+      const r = await safeGet(f, `https://api.github.com/gists/${gist[1]}`, { headers: ghHeaders(false, false) });
       if (!r.ok) return { ok: false, detail: `gist fetch ${r.status}` };
       const g = (await r.json()) as { owner?: { login?: string }; files?: Record<string, { content?: string }> };
       if (g.owner?.login?.toLowerCase() !== user.toLowerCase()) return { ok: false, detail: "gist not owned by " + user };
@@ -30,7 +45,7 @@ export async function checkGithub(user: string, proof: string, key: string, f: F
       return found ? { ok: true, detail: "gist proof found" } : { ok: false, detail: "proof text not in gist" };
     }
     if (proof === "readme" || proof.toLowerCase() === `https://github.com/${user}/${user}`.toLowerCase()) {
-      const r = await f(`https://api.github.com/repos/${user}/${user}/readme`, { headers: ghHeaders(true) });
+      const r = await safeGet(f, `https://api.github.com/repos/${user}/${user}/readme`, { headers: ghHeaders(true) });
       if (!r.ok) return { ok: false, detail: `readme fetch ${r.status}` };
       return (await r.text()).includes(text) ? { ok: true, detail: "profile README proof found" } : { ok: false, detail: "proof text not in profile README" };
     }
@@ -64,9 +79,9 @@ export async function checkChallenge(url: string, text: string, f: Fetch = fetch
     const gist = url.match(GIST_URL);
     const grok = GROK_SHARE.test(url);
     const target = gist ? `https://api.github.com/gists/${gist[2]}` : url;
-    const r = await f(target, { headers: gist ? ghHeaders(false, false) : { "user-agent": "botproof" } });
+    const r = await safeGet(f, target, { headers: gist ? ghHeaders(false, false) : { "user-agent": "botproof" } });
     if (!r.ok) return { ok: false, detail: `fetch ${r.status}` };
-    let body = (await r.text()).slice(0, 2_000_000);
+    let body = await r.text();
     if (gist) {
       const g = JSON.parse(body) as { owner?: { login?: string }; files?: Record<string, { content?: string }> };
       if (!gistOwner || g.owner?.login?.toLowerCase() !== gistOwner.toLowerCase()) return { ok: false, detail: "gist not owned by the creator" };
@@ -89,7 +104,7 @@ export async function checkX(url: string, key: string, f: Fetch = fetch): Promis
   const m = url.match(X_POST);
   if (!m) return { ok: false, reachable: true, detail: "not an X post URL" };
   try {
-    const r = await f(`https://cdn.syndication.twimg.com/tweet-result?id=${m[2]}&token=a`, { headers: { "user-agent": "botproof" } });
+    const r = await safeGet(f, `https://cdn.syndication.twimg.com/tweet-result?id=${m[2]}&token=a`, { headers: { "user-agent": "botproof" } });
     if (!r.ok) return { ok: false, reachable: false, detail: `X fetch ${r.status}` };
     const t = (await r.json()) as { text?: string; user?: { screen_name?: string } };
     const handle = t.user?.screen_name?.toLowerCase();

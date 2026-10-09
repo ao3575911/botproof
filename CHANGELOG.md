@@ -22,7 +22,13 @@ All notable changes follow [Semantic Versioning](https://semver.org).
 - `transfer <platform>/<botId> --to github:<user> --to-key <key>`: the owner signs a hand-over before the new owner publishes.
 - Grok share pages: only the title and description tags are read.
 
+- One rule set (`src/rules.ts`) for CI and `verify`: `verify` now rejects a tampered creator profile (A9) and a handle that doesn't match its proven GitHub account (A10b).
+- `platform` must be `grok` or `web`; all HTML in the Pages index is escaped (A12c, stored XSS).
+- Network reads are https only, with a 10 s timeout, a 2 MB cap and no redirects.
+- Canonical JSON follows RFC 8785 for strings and key order, and rejects non-integer or unsafe numbers.
+
 ### Fixed
+- A bad JSON file in the registry is reported by path, and the check fails closed (A12b).
 - Evidence signed in the same second the code was issued is accepted.
 - `init --bot https://x.ai/bot/<id>` works without `--platform`, as the README shows.
 

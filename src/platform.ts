@@ -7,7 +7,7 @@
  * It only upgrades a claim whose own challenge already passed, and only for allowlisted platforms.
  */
 import { createHash, createPublicKey, verify } from "node:crypto";
-import type { Check } from "./proofs.js";
+import { safeGet, type Check } from "./proofs.js";
 
 type Fetch = typeof fetch;
 export type Jwk = { kty: string; crv: string; x: string; kid?: string };
@@ -74,7 +74,7 @@ export function verifyDirectory(authority: string, headers: Record<string, strin
 export async function fetchDirectory(origin: string, f: Fetch = fetch): Promise<Check & { keys: Jwk[] }> {
   const url = new URL("/.well-known/http-message-signatures-directory", origin);
   if (url.protocol !== "https:") return { ok: false, detail: "signature agent must be https", keys: [] };
-  const r = await f(url.toString(), { headers: { "user-agent": "botproof" } });
+  const r = await safeGet(f, url.toString(), { headers: { "user-agent": "botproof" } });
   if (!r.ok) return { ok: false, detail: `directory fetch ${r.status}`, keys: [] };
   const headers: Record<string, string> = {};
   r.headers.forEach((v, k) => (headers[k] = v));

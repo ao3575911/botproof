@@ -4,10 +4,11 @@ import { join } from "node:path";
 
 export type Doc = Record<string, unknown> & { key?: string; sig?: string };
 
-/** Canonical JSON: sorted keys, no whitespace (JCS for strings, ints, bools). */
+/** Canonical JSON (RFC 8785 JCS) restricted to safe integers: sorted keys (UTF-16 order), no whitespace. */
 export function canonical(v: unknown): string {
   if (v === null || typeof v !== "object") {
-    if (typeof v === "number" && !Number.isFinite(v)) throw new Error("non-finite number");
+    if (typeof v === "number" && !Number.isSafeInteger(v)) throw new Error("only safe integers are allowed in signed documents");
+    if (v === undefined || typeof v === "function" || typeof v === "bigint" || typeof v === "symbol") throw new Error("unsupported value");
     return JSON.stringify(v);
   }
   if (Array.isArray(v)) return "[" + v.map(canonical).join(",") + "]";
@@ -48,7 +49,7 @@ export function verifyDoc(doc: Doc): boolean {
 }
 
 /** Version hash of a signed document: sha256 of its canonical body. */
-export const docHash = (doc: Doc) => { const { sig: _s, ...body } = doc; return sha256(canonical(body)); };
+export const docHash = (doc: Doc) => { const { sig: _s, ...body } = doc; try { return sha256(canonical(body)); } catch { return "invalid"; } };
 
 export function home(): string {
   return process.env.BOTPROOF_HOME || join(process.env.HOME || ".", ".botproof");
