@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { Doc, ID_RE, docHash, slug, verifyDoc } from "./core.js";
-import { GROK_SHARE, checkChallenge, checkX, checkDns, checkGithub, checkPlatformSignature } from "./proofs.js";
+import { GROK_SHARE, checkChallenge, checkX, checkDns, checkGithub } from "./proofs.js";
+import { checkPlatformEvidence } from "./platform.js";
 
 type Fetch = typeof fetch;
 export type Strength = "self-claimed" | "challenge-passed" | "platform-signed" | "revoked";
@@ -48,11 +49,12 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
   }
   const ct = await creatorTrust(errors.length ? undefined : b.creator, f);
   let strength: Strength = "self-claimed", ownershipDetail = "no challenge";
-  const ch = m.challenge as { nonce: string; url: string } | undefined;
+  const ch = m.challenge as { nonce: string; url: string; issued?: string } | undefined;
   const boundUrl = m.platform !== "grok" || (ch?.url.match(GROK_SHARE)?.[1] === m.botId);
-  if (errors.length) strength = "self-claimed";
-  else if (revoked.has(docHash(m))) strength = "revoked";
-  else if ((await checkPlatformSignature(m.platformEvidence)).ok) strength = "platform-signed";
+  const pe = !errors.length && m.platformEvidence ? await checkPlatformEvidence(m.platformEvidence, ch?.nonce, ch?.issued, f) : undefined;
+  if (errors.length) ownershipDetail = "invalid claim";
+  else if (revoked.has(docHash(m))) { strength = "revoked"; ownershipDetail = "withdrawn by the creator"; }
+  else if (pe?.ok) { strength = "platform-signed"; ownershipDetail = pe.detail; }
   else if (ch?.nonce && ch.url) {
     if (!boundUrl) ownershipDetail = `grok challenge must be on https://x.ai/bot/${m.botId}`;
     else {
@@ -61,6 +63,7 @@ export async function evaluate(b: Bundle, f: Fetch = fetch) {
       if (r.ok) strength = "challenge-passed";
     }
   }
+  if (pe && !pe.ok && strength !== "revoked") ownershipDetail += `; platform evidence: ${pe.detail}`;
   const attestations = [];
   let reviews = 0;
   for (const a of b.attestations) {

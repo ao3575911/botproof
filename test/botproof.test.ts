@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Doc, canonical, docHash, keyId, signDoc, verifyDoc } from "../src/core.js";
 import { readFileSync } from "node:fs";
+import { sign } from "node:crypto";
+import { checkWebBotAuth, parseSignature, signatureBase, thumbprint, verifyDirectory } from "../src/platform.js";
 import { challengeText, checkChallenge, checkGithub, checkX, grokPageText, proofText } from "../src/proofs.js";
 import { badge, build, check, evaluate, load } from "../src/registry.js";
 
@@ -105,4 +107,34 @@ test("X post proof: verified, wrong author, unreachable", async () => {
   assert.equal((await checkX(url, id(alice), post("mallory", txt))).ok, false);
   const down = await checkX(url, id(alice), post("alice", "", 503));
   assert.equal(down.ok || down.reachable, false);
+});
+
+// Real signed key directory from chatgpt.com (fixture, captured 2026-10-09).
+const gpt = JSON.parse(readFileSync(new URL("../../test/fixtures/chatgpt-directory.json", import.meta.url), "utf8"));
+test("web bot auth: real ChatGPT key directory signature verifies", () => {
+  assert.ok(verifyDirectory(gpt.authority, gpt.headers, Buffer.from(gpt.body)).ok);
+  assert.equal(verifyDirectory(gpt.authority, gpt.headers, Buffer.from(gpt.body.replace("ai", "ia"))).ok, false);
+  assert.equal(verifyDirectory("evil.com", gpt.headers, Buffer.from(gpt.body)).ok, false);
+});
+
+test("web bot auth: signed request with the code makes a claim platform-signed", async () => {
+  const k = kp(), jwk = { ...k.export({ format: "jwk" }), d: undefined } as { kty: string; crv: string; x: string };
+  const kid = thumbprint(jwk), now = Math.floor(Date.now() / 1000);
+  const sigOver = (input: string, value: (n: string) => string | undefined) =>
+    sign(null, Buffer.from(signatureBase(parseSignature(input, "s=:AA==:".replace("s", input.split("=")[0])), value)), k).toString("base64");
+  const body = JSON.stringify({ keys: [jwk] });
+  const dIn = `d=("@authority";req);created=${now};keyid="${kid}";alg="ed25519";tag="http-message-signatures-directory"`;
+  const dirHeaders = { "signature-input": dIn, signature: `d=:${sigOver(dIn, () => "agent.example")}:` };
+  const rIn = `r=("@authority" "@path" "signature-agent");created=${now};keyid="${kid}";alg="ed25519";tag="web-bot-auth"`;
+  const vals: Record<string, string> = { "@authority": "alice.example", "@path": "/botproof/n0nce", "signature-agent": '"https://agent.example"' };
+  const ev = { type: "web-bot-auth" as const, request: { method: "GET", authority: "alice.example", path: "/botproof/n0nce",
+    headers: { "signature-agent": vals["signature-agent"], "signature-input": rIn, signature: `r=:${sigOver(rIn, (n) => vals[n])}:` } } };
+  const f = (async (u: string) => String(u).startsWith("https://agent.example/") ? new Response(body, { headers: dirHeaders }) : fakeFetch(u)) as typeof fetch;
+  assert.ok((await checkWebBotAuth(ev, "n0nce", undefined, f)).ok);
+  assert.equal((await checkWebBotAuth(ev, "other", undefined, f)).ok, false);
+  assert.equal((await checkWebBotAuth({ ...ev, request: { ...ev.request, authority: "bob.example" } }, "n0nce", undefined, f)).ok, false);
+  const m2 = signDoc({ ...manifest, sig: undefined, platformEvidence: ev }, alice);
+  const r = await evaluate({ manifest: m2, creator: base["creators/github-alice.json"], attestations: [], attesters: {}, revocations: [] }, f);
+  assert.equal(r.strength, "platform-signed");
+  assert.equal(r.score, 20 + 35);
 });
