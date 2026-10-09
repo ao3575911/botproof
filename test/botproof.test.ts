@@ -29,6 +29,7 @@ const creator = (k: KeyObject, user: string, gist: string) =>
 
 function registry(files: Record<string, Doc>) {
   const dir = mkdtempSync(join(tmpdir(), "bp-"));
+  mkdirSync(join(dir, "bots")); writeFileSync(join(dir, "bots", ".gitkeep"), "");
   for (const [p, d] of Object.entries(files)) { mkdirSync(dirname(join(dir, p)), { recursive: true }); writeFileSync(join(dir, p), JSON.stringify(d)); }
   return dir;
 }

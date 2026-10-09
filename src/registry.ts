@@ -87,7 +87,8 @@ export function load(dir: string) {
   const revocations = jsonFiles(join(dir, "revocations")).map(readJson);
   const bots: { path: string; bundle: Bundle }[] = [];
   const root = join(dir, "bots");
-  for (const plat of existsSync(root) ? readdirSync(root) : []) for (const id of readdirSync(join(root, plat))) {
+  const dirs = (d: string) => readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+  for (const plat of existsSync(root) ? dirs(root) : []) for (const id of dirs(join(root, plat))) {
     const base = join(root, plat, id), mp = join(base, "manifest.json");
     if (!existsSync(mp)) continue;
     const manifest = readJson(mp);
