@@ -35,7 +35,7 @@ botproof verify grok/<id> --min-strength challenge-passed
 ```
 
 ```yaml
-- uses: ao3575911/botproof@v0.3.0
+- uses: ao3575911/botproof@v0.3.1
   with: { bot: grok/<id>, min-strength: challenge-passed }
 ```
 

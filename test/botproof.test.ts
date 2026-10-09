@@ -176,6 +176,10 @@ test("ownership: a legit update and a signed transfer pass; takeover and wrong a
   assert.deepEqual(await check(d3, fakeFetch, { baseDir, author: "alice" }), []);
   const d4 = registry({ ...base, ...keepV, "bots/web/demo/transfers/t.json": t, "bots/web/demo/manifest.json": take });
   assert.deepEqual(await check(d4, fakeFetch, { baseDir: d3, author: "bob" }), []);
+  const legacy = signDoc({ ...manifest, sig: undefined, key: undefined, seq: undefined, challenge: undefined, version: "0.1.0" }, alice);
+  const legacyBase = registry({ ...base, "bots/web/demo/manifest.json": legacy });
+  const migrated = registry({ ...base, "bots/web/demo/manifest.json": signDoc({ ...manifest, sig: undefined, key: undefined }, alice) });
+  assert.deepEqual(await check(migrated, fakeFetch, { baseDir: legacyBase, author: "alice" }), [], "pre-0.3 manifest can be migrated and its legacy version file removed");
   const d5 = registry({ "creators/github-bob.json": base["creators/github-bob.json"] });
   assert.ok((await check(d5, fakeFetch, { baseDir, author: "bob" })).some((e) => e.includes("can't be deleted")));
 });
